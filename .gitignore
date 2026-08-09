@@ -23,6 +23,11 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Machine-specific junctions/symlinks created by `npx skills add`. The real
+# skill content is committed under .agents/skills/; re-run the installer to
+# recreate these links on another machine.
+.claude/skills/
+
 # Editor / OS
 .vscode/*
 !.vscode/extensions.json

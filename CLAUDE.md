@@ -53,6 +53,17 @@ No billing. No roles/permissions (one trusted workspace; auth is the only wall).
 9. Secrets live in .env.local and platform env vars only. .env* is gitignored in the first commit.
 10. Visual polish is timeboxed. I must give pixel-specific instructions or default styling stands. Never iterate on "make it feel better."
 
+## Installed skills and MCP — and where they contradict this file
+
+`.mcp.json` registers the **Supabase MCP server** (project `uuhgzpfrxttgjbondcos`, features: docs, account, database, debugging, development, functions, branching). `.agents/skills/` holds two vendored Supabase skills, junction-linked into `.claude/skills/` (junctions are gitignored; the content is committed, and `skills-lock.json` pins the hashes).
+
+**These are third-party advice, not project rules. This file wins.** Two known conflicts:
+
+1. **RLS.** `.agents/skills/supabase-postgres-best-practices/references/security-rls-basics.md` teaches per-row ownership policies — `using (user_id = auth.uid())` — and `force row level security`. That is **exactly what Non-negotiable 2 forbids.** Threadline is one trusted workspace with no roles; every table gets one blanket `for all to authenticated using (true) with check (true)` policy and nothing else. Do not "fix" a policy to match that skill. If a future session thinks the policies look too permissive, the answer is in Non-negotiable 2 and SPEC.md §2.2 — it is deliberate.
+2. **Generic Postgres tuning.** The same skill's advice on indexing, pooling, and partitioning is written for larger systems. At 5–30 users, applying it is scope creep against the ship date. Read it when a real query is slow, not preemptively.
+
+**Migrations stay CLI-managed and repo-owned.** `supabase/migrations/` is the source of truth. If the MCP's `apply_migration` is used, the version it records must match the repo filename exactly, or `supabase db push` will later try to re-apply. When in doubt, use `npx supabase db push`.
+
 ## Workflow loop — every task, every session
 
 1. Pick the single next unchecked `ROADMAP.md` item (**one in flight at a time**). Restate it + its verification check.
