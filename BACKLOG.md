@@ -36,3 +36,7 @@ These two are the **only** backlog items allowed to jump the queue, and only if 
 ## Ideas parked during the build
 
 *(append here as they come up — one line each, with the date and who asked)*
+
+## Ideas parked during the build
+
+- **2026-08-09 (Ethan)** — Persist the optimistic send queue across a page reload. Today a failed send keeps its bubble and Retry across a channel switch, but not a browser reload: `pending` is React state, so refreshing loses the unsent text. Closing it means writing the queue to localStorage keyed by channel and rehydrating on mount. Narrow (send must fail *and* the user must reload), so it is parked rather than built.
