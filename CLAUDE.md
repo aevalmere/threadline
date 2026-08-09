@@ -123,6 +123,6 @@ The Supabase CLI is a **devDependency**, not a global install — always `npx su
 
 ## What the user does (never Claude)
 
-Creates the Supabase project and hands over URL + anon key · disables public signups · connects the GitHub repo to Cloudflare Pages (Claude prints the exact clicks) · invites teammate emails from the Supabase dashboard · later if needed: custom domain, Resend SMTP.
+Creates the Supabase project and hands over URL + anon key · disables public signups · **sets Authentication → URL Configuration: Site URL plus Redirect URLs for both `https://<project>.pages.dev/**` and `http://localhost:5173/**`** (without the exact `/auth/callback` origin on the allowlist, magic links silently fall back to Site URL and dead-end) · connects the GitHub repo to Cloudflare Pages (Claude prints the exact clicks) · invites teammate emails from the Supabase dashboard · later if needed: custom domain, Resend SMTP.
 
 **The user never hands over the service_role key for client work.** When blocked on the user, say so once and continue with unblocked items.

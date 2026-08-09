@@ -1,0 +1,21 @@
+import path from 'node:path'
+import { defineConfig } from 'vitest/config'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  server: {
+    port: 5173,
+  },
+  test: {
+    // The tested helpers are pure — no DOM, so no jsdom dependency.
+    environment: 'node',
+    include: ['src/test/**/*.test.ts'],
+  },
+})

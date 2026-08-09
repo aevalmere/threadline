@@ -42,3 +42,26 @@ Log an entry when: a locked-stack rule is bent, the schema deviates from `SPEC.m
 **Fallback if `generateLink` proves unreliable.** Switch to password-based seed users, keep the passwords in `.env.local` only, and append a superseding entry here.
 
 **Scope.** The `service_role` key this script needs lives in `.env.local` (gitignored) and is used *only* by `scripts/`. It is never imported from `src/`, never committed, and never placed in a Cloudflare Pages environment variable.
+
+**Amended same day, after reviewer FAIL.** The first version judged each verb on `!error`, which proves nothing: under RLS a denied UPDATE or DELETE is not an error — it matches zero rows and returns 204, and a denied SELECT returns 200 with `[]`. The check would have printed PASS against a table carrying only a select policy. It now judges every verb on **rows affected** (`.select()` on the update and delete, asserting exactly one row each; `> 0` rows on the select) and adds a fifth `cleanup` assertion confirming the probe row is really gone — otherwise a silently-blocked delete leaves debris that makes the *next* run fail on the unique `(name, kind)` constraint and look like an insert-policy problem.
+
+---
+
+## #4 — 2026-08-09 — `messages` is published to realtime with an explicit column list
+
+**Decision.** The P0 messages migration adds the table to `supabase_realtime` with a column list that omits `search_tsv`:
+
+```sql
+alter publication supabase_realtime add table public.messages (
+  id, channel_id, post_id, author_id, thread_root_id,
+  body, created_at, edited_at, deleted_at
+);
+```
+
+Replica identity is left at the default (primary key), **not** `full`.
+
+**Why.** `search_tsv` is a stored generated column created in P0 so that P5 needs no schema change on the busiest table (SPEC.md §3). Without a column list, every Postgres Changes payload in P1 would ship the tsvector next to `body` — roughly double the websocket bytes per message, for data no client reads. `replica identity full` would similarly multiply WAL volume; it is unnecessary because soft deletes and edits are UPDATEs, which already carry the full new row. Both are Non-negotiable 8 (protect the free tier's realtime budget).
+
+**Constraint this creates.** A future column added to `messages` is **not** replicated until a new migration re-declares the publication's column list. Any migration that adds a client-visible column to `messages` must also `alter publication supabase_realtime set table public.messages (…)` with the new column included.
+
+**Requires Postgres 15+.** Fine — Supabase provisions 17, and `supabase/config.toml` now says 17 to match.

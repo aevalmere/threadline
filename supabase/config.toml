@@ -1,0 +1,14 @@
+# Supabase CLI config. The linked remote project is the source of truth for
+# runtime settings (auth providers, SMTP, signups) — those are set in the
+# dashboard by the user, not here. This file exists so `supabase db push`
+# knows what project layout to expect.
+project_id = "threadline"
+
+[db]
+# Match the linked project. New Supabase projects provision Postgres 17; this
+# only affects the local shadow database used by `db diff` / `db pull`, but a
+# mismatch there produces misleading diffs.
+major_version = 17
+
+[db.migrations]
+schema_paths = []
