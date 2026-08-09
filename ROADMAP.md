@@ -17,7 +17,7 @@ One phase at a time. **A phase starts only after the user approves the previous 
 - [x] Supabase project wired via CLI migrations — `profiles`, `channels`, `channel_members`, `messages`
 - [ ] Magic-link auth, public signups disabled *(code shipped; unverified until a real link is redeemed at G0)*
 - [x] Seed script — 2 users, 2 channels, 50 messages — plus the four-verb anon RLS check
-- [ ] GitHub → Cloudflare Pages auto-deploy
+- [x] GitHub → Cloudflare Pages auto-deploy — https://threadline-cc0.pages.dev
 - [x] `.env` handling — `.env*` gitignored in the first commit, `.env.example` committed
 
 **GATE G0** — The user opens the production URL **on phone and laptop**, receives a magic link, logs in, and sees the shell with the seeded channels.
