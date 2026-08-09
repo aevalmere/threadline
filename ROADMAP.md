@@ -26,7 +26,7 @@ One phase at a time. **A phase starts only after the user approves the previous 
 
 ## P1 — Chat · Aug 10–15 *(orig. Aug 7–13)*
 
-- [ ] Channel CRUD
+- [x] Channel CRUD
 - [ ] Realtime messages with optimistic send
 - [ ] Threaded replies
 - [ ] Uploads to Supabase Storage — 10 MB cap, inline image thumbnails

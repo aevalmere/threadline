@@ -192,10 +192,6 @@ function CreateForm({
     <form onSubmit={(e) => void submit(e)} className="space-y-4">
       <DialogHeader>
         <DialogTitle>New channel</DialogTitle>
-        <DialogDescription>
-          Names are lowercased and spaces become dashes, so “Design Review” becomes
-          design-review.
-        </DialogDescription>
       </DialogHeader>
 
       <div className="space-y-2">
@@ -228,11 +224,6 @@ function CreateForm({
             </Button>
           ))}
         </div>
-        <p className="text-muted-foreground text-xs">
-          {kind === 'chat'
-            ? 'A realtime message stream.'
-            : 'Holds posts with titles and tags. Forum surfaces arrive in P3.'}
-        </p>
       </div>
 
       <div className="space-y-2">
@@ -306,9 +297,6 @@ function RenameForm({
     <form onSubmit={(e) => void submit(e)} className="space-y-4">
       <DialogHeader>
         <DialogTitle>Rename #{channel.name}</DialogTitle>
-        <DialogDescription>
-          Links to this channel keep working — they use its id, not its name.
-        </DialogDescription>
       </DialogHeader>
 
       <Input
