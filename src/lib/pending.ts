@@ -21,6 +21,8 @@ export interface PendingMessage {
    * bubble — and a retry — when they come back.
    */
   channelId: string
+  /** Null for a top-level message; the thread's root id for a reply. */
+  threadRootId: number | null
   /**
    * Highest message id known when this was sent. Only rows *newer* than this
    * can be its confirmation, which is what keeps an identical older message
@@ -35,6 +37,7 @@ export interface ConfirmableMessage {
   id: number
   author_id: string
   body: string
+  thread_root_id: number | null
 }
 
 /**
@@ -58,6 +61,9 @@ export function reconcilePending<T extends ConfirmableMessage>(
         !claimed.has(p.key) &&
         p.authorId === row.author_id &&
         p.body === row.body &&
+        // The same text sent as a root and as a reply are different messages;
+        // letting one claim the other's bubble would flicker the wrong one away.
+        p.threadRootId === row.thread_root_id &&
         row.id > p.sinceId,
     )
     if (match) claimed.add(match.key)

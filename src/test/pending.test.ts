@@ -17,12 +17,18 @@ function pending(
   authorId = ALICE,
   sinceId = 100,
   channelId = 'channel-uuid',
+  threadRootId: number | null = null,
 ): PendingMessage {
-  return { key, body, authorId, channelId, sinceId, status: 'sending' }
+  return { key, body, authorId, channelId, threadRootId, sinceId, status: 'sending' }
 }
 
-function confirmed(id: number, body: string, author_id = ALICE) {
-  return { id, body, author_id }
+function confirmed(
+  id: number,
+  body: string,
+  author_id = ALICE,
+  thread_root_id: number | null = null,
+) {
+  return { id, body, author_id, thread_root_id }
 }
 
 describe('reconcilePending', () => {
@@ -76,6 +82,23 @@ describe('reconcilePending', () => {
     expect(reconcilePending(p, [confirmed(101, 'hello')])).toEqual([])
   })
 
+  it('does not let a reply claim a top-level bubble with the same text', () => {
+    const p = [pending('k1', 'ok')] // top-level: threadRootId null
+    const asReply = [confirmed(101, 'ok', ALICE, 42)]
+    expect(reconcilePending(p, asReply)).toEqual(p)
+  })
+
+  it('matches a reply to its own thread', () => {
+    const p = [pending('k1', 'ok', ALICE, 100, 'channel-uuid', 42)]
+    expect(reconcilePending(p, [confirmed(101, 'ok', ALICE, 42)])).toEqual([])
+  })
+
+  it('does not let a reply in another thread claim it', () => {
+    const p = [pending('k1', 'ok', ALICE, 100, 'channel-uuid', 42)]
+    const otherThread = [confirmed(101, 'ok', ALICE, 99)]
+    expect(reconcilePending(p, otherThread)).toEqual(p)
+  })
+
   it('preserves the order of what remains', () => {
     const p = [pending('k1', 'a'), pending('k2', 'b'), pending('k3', 'c')]
     const left = reconcilePending(p, [confirmed(101, 'b')])
@@ -95,7 +118,7 @@ describe('reconcilePendingForChannel', () => {
   const GENERAL = 'channel-general'
 
   function row(id: number, body: string, channel_id: string, author_id = ALICE) {
-    return { id, body, channel_id, author_id }
+    return { id, body, channel_id, author_id, thread_root_id: null }
   }
 
   it('drops an entry confirmed by a row in the same channel', () => {
@@ -138,7 +161,9 @@ describe('reconcilePendingForChannel', () => {
 
   it('tolerates a null channel_id without matching it', () => {
     const p = [pending('k1', 'ok', ALICE, 100, RANDOM)]
-    const orphan = [{ id: 101, body: 'ok', channel_id: null, author_id: ALICE }]
+    const orphan = [
+      { id: 101, body: 'ok', channel_id: null, author_id: ALICE, thread_root_id: null },
+    ]
     expect(reconcilePendingForChannel(p, orphan, RANDOM)).toEqual(p)
   })
 

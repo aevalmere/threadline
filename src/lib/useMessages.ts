@@ -160,8 +160,13 @@ export function useMessages(channelId: string | undefined) {
     }
   }, [channelId, absorb])
 
+  /**
+   * `threadRootId` is null for a top-level message. Callers must pass the value
+   * `threadRootFor()` produced rather than the id of whatever was clicked —
+   * that helper is what keeps threads one level deep (SPEC §1.3).
+   */
   const send = useCallback(
-    async (rawBody: string) => {
+    async (rawBody: string, threadRootId: number | null = null) => {
       const body = rawBody.trim()
       if (!body || !channelId || !userId) return
 
@@ -171,6 +176,7 @@ export function useMessages(channelId: string | undefined) {
         body,
         authorId: userId,
         channelId,
+        threadRootId,
         sinceId: highestMessageId(messagesRef.current),
         status: 'sending',
       }
@@ -178,7 +184,12 @@ export function useMessages(channelId: string | undefined) {
 
       const { data, error: err } = await supabase
         .from('messages')
-        .insert({ channel_id: channelId, author_id: userId, body })
+        .insert({
+          channel_id: channelId,
+          author_id: userId,
+          body,
+          thread_root_id: threadRootId,
+        })
         .select(MESSAGE_COLUMNS)
         .single()
 
@@ -202,7 +213,7 @@ export function useMessages(channelId: string | undefined) {
       const entry = pending.find((p) => p.key === key)
       if (!entry) return
       setPending((p) => dropPending(p, key))
-      await send(entry.body)
+      await send(entry.body, entry.threadRootId)
     },
     [pending, send],
   )

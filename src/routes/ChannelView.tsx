@@ -1,4 +1,11 @@
-import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 import { useParams } from 'react-router-dom'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -7,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useChannels } from '@/lib/channels-context'
 import { groupMessages } from '@/lib/grouping'
 import { useProfiles } from '@/lib/profiles-context'
+import { splitThreads, threadRootFor } from '@/lib/threads'
 import { useMessages, type Message } from '@/lib/useMessages'
 import type { PendingMessage } from '@/lib/pending'
 import { cn } from '@/lib/utils'
@@ -56,7 +64,9 @@ export default function ChannelView() {
     )
   }
 
-  const groups = groupMessages(messages)
+  const split = splitThreads(messages)
+  const groups = groupMessages(split.roots)
+  const rootPending = pending.filter((p) => p.threadRootId === null)
 
   return (
     <div className="flex h-full flex-col">
@@ -94,10 +104,20 @@ export default function ChannelView() {
                 authorName={nameFor(group.authorId)}
                 avatarUrl={byId.get(group.authorId)?.avatar_url ?? null}
                 messages={group.messages}
+                renderThread={(message) => (
+                  <Thread
+                    root={message}
+                    replies={split.repliesByRoot.get(message.id) ?? []}
+                    pending={pending.filter((p) => p.threadRootId === message.id)}
+                    onSend={send}
+                    onRetry={retry}
+                    onDiscard={discard}
+                  />
+                )}
               />
             ))}
 
-            {pending.map((p) => (
+            {rootPending.map((p) => (
               <PendingRow
                 key={p.key}
                 pending={p}
@@ -130,10 +150,12 @@ function MessageGroupRow({
   authorName,
   avatarUrl,
   messages,
+  renderThread,
 }: {
   authorName: string
   avatarUrl: string | null
   messages: Message[]
+  renderThread: (message: Message) => ReactNode
 }) {
   const first = messages[0]
   return (
@@ -145,9 +167,101 @@ function MessageGroupRow({
           <span className="text-muted-foreground text-xs">{shortTime(first.created_at)}</span>
         </p>
         {messages.map((m) => (
-          <MessageBody key={m.id} message={m} />
+          <div key={m.id}>
+            <MessageBody message={m} />
+            {renderThread(m)}
+          </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+/**
+ * A message's replies, collapsed behind a count until opened. Inline rather
+ * than a side panel: it costs no new route or layout, and it works on a phone.
+ */
+function Thread({
+  root,
+  replies,
+  pending,
+  onSend,
+  onRetry,
+  onDiscard,
+}: {
+  root: Message
+  replies: Message[]
+  pending: PendingMessage[]
+  onSend: (body: string, threadRootId: number | null) => Promise<void>
+  onRetry: (key: string) => Promise<void>
+  onDiscard: (key: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const { nameFor, byId } = useProfiles()
+
+  const count = replies.length
+  if (count === 0 && !open && pending.length === 0) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-muted-foreground hover:text-foreground mt-0.5 text-xs"
+      >
+        Reply
+      </button>
+    )
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-primary mt-0.5 text-xs font-medium hover:underline"
+      >
+        {count} {count === 1 ? 'reply' : 'replies'}
+      </button>
+    )
+  }
+
+  return (
+    <div className="border-border mt-1.5 space-y-2 border-l-2 pl-3">
+      {groupMessages(replies).map((group) => (
+        <MessageGroupRow
+          key={group.key}
+          authorName={nameFor(group.authorId)}
+          avatarUrl={byId.get(group.authorId)?.avatar_url ?? null}
+          messages={group.messages}
+          // One level deep (SPEC §1.3) — a reply has no thread of its own.
+          renderThread={() => null}
+        />
+      ))}
+
+      {pending.map((p) => (
+        <PendingRow
+          key={p.key}
+          pending={p}
+          authorName={nameFor(p.authorId)}
+          avatarUrl={byId.get(p.authorId)?.avatar_url ?? null}
+          onRetry={() => void onRetry(p.key)}
+          onDiscard={() => onDiscard(p.key)}
+        />
+      ))}
+
+      <Composer
+        channelName={undefined}
+        placeholder="Reply…"
+        disabled={false}
+        onSend={(body) => onSend(body, threadRootFor(root))}
+      />
+
+      <button
+        type="button"
+        onClick={() => setOpen(false)}
+        className="text-muted-foreground hover:text-foreground text-xs"
+      >
+        Collapse
+      </button>
     </div>
   )
 }
@@ -222,10 +336,12 @@ function Composer({
   channelName,
   onSend,
   disabled,
+  placeholder,
 }: {
   channelName: string | undefined
   onSend: (body: string) => Promise<void>
   disabled: boolean
+  placeholder?: string
 }) {
   const [value, setValue] = useState('')
 
@@ -250,7 +366,7 @@ function Composer({
         onKeyDown={onKeyDown}
         rows={2}
         disabled={disabled}
-        placeholder={channelName ? `Message #${channelName}` : 'Message'}
+        placeholder={placeholder ?? (channelName ? `Message #${channelName}` : 'Message')}
         className="border-input placeholder:text-muted-foreground focus-visible:ring-ring/50 field-sizing-content max-h-40 min-h-16 w-full resize-none rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] disabled:opacity-60"
       />
     </div>
