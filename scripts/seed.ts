@@ -138,9 +138,15 @@ async function main() {
   // 3. Fifty messages, alternating authors, plus one real thread so P1 has
   //    something with depth to render.
   //
-  //    Idempotent by wiping the channel first rather than counting: a run that
-  //    dies between the bulk insert and the thread insert would otherwise leave
-  //    47 rows behind and a rerun would stack another 47 on top.
+  //    Idempotent via a count guard: exactly 50 means a previous run finished,
+  //    so skip. Any other non-zero count means a run died between the bulk
+  //    insert and the thread insert, so wipe and redo rather than stacking
+  //    another 47 on top.
+  //
+  //    Note the consequence: a complete seed is never re-authored. Changing
+  //    SEED_USER_A/B_EMAIL and rerunning leaves the existing 50 owned by the
+  //    old users. To re-author, delete the messages (or the old users, which
+  //    cascades) first.
   const { count: existing } = await admin
     .from('messages')
     .select('id', { count: 'exact', head: true })
