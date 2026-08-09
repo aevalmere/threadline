@@ -138,22 +138,25 @@ async function main() {
   // 3. Fifty messages, alternating authors, plus one real thread so P1 has
   //    something with depth to render.
   //
-  //    Idempotent via a count guard: exactly 50 means a previous run finished,
-  //    so skip. Any other non-zero count means a run died between the bulk
-  //    insert and the thread insert, so wipe and redo rather than stacking
-  //    another 47 on top.
+  //    Idempotent via a count guard, and the threshold is `>= 50`, not `== 50`,
+  //    for a reason that cost real messages to learn: once people start using
+  //    the app, "more than 50" is the *normal* state, not a broken one. An
+  //    equality check sent a channel holding 50 seeded messages plus 22 real
+  //    ones down the wipe branch. Only a count *below* 50 means a run died
+  //    between the bulk insert and the thread insert, and only that is worth
+  //    clearing rather than stacking another 47 on top.
   //
   //    Note the consequence: a complete seed is never re-authored. Changing
-  //    SEED_USER_A/B_EMAIL and rerunning leaves the existing 50 owned by the
-  //    old users. To re-author, delete the messages (or the old users, which
-  //    cascades) first.
+  //    SEED_USER_A/B_EMAIL and rerunning leaves the existing messages owned by
+  //    the old users. To re-author, delete the messages (or the old users,
+  //    which cascades) first.
   const { count: existing } = await admin
     .from('messages')
     .select('id', { count: 'exact', head: true })
     .eq('channel_id', general)
 
-  if ((existing ?? 0) === 50) {
-    console.log('✓ messages     50 already present, skipping')
+  if ((existing ?? 0) >= 50) {
+    console.log(`✓ messages     ${existing} already present, leaving them alone`)
   } else {
     if ((existing ?? 0) > 0) {
       const { error: wipeErr } = await admin
@@ -161,7 +164,7 @@ async function main() {
         .delete()
         .eq('channel_id', general)
       die('clear partial message seed', wipeErr)
-      console.log(`  cleared ${existing} messages from an earlier partial run`)
+      console.log(`  cleared ${existing} messages from an incomplete earlier run`)
     }
 
     const rows = Array.from({ length: 47 }, (_, i) => ({
@@ -200,7 +203,64 @@ async function main() {
     console.log('✓ messages     50 in #general, including a 3-reply thread')
   }
 
+  await threadFlatteningCheck(general, userA)
   await rlsCheck(EMAIL_A)
+}
+
+/**
+ * Proves the flatten_thread_root trigger is live — SPEC.md §1.3, DECISIONS #8.
+ *
+ * Client code already collapses a reply target to its root, so a passing app is
+ * no evidence the database rule exists. This deliberately sends what a buggy
+ * client would: a reply pointing at another *reply*. The trigger must rewrite
+ * it to the root.
+ */
+async function threadFlatteningCheck(channelId: string, authorId: string) {
+  const { data: replies, error: findErr } = await admin
+    .from('messages')
+    .select('id, thread_root_id')
+    .eq('channel_id', channelId)
+    .not('thread_root_id', 'is', null)
+    .order('id')
+    .limit(1)
+  die('find a seeded reply', findErr)
+
+  const reply = replies?.[0]
+  if (!reply) {
+    console.error('✗ thread check: no reply to test against — was the seed wiped?')
+    process.exit(1)
+  }
+
+  const { data: nested, error: insErr } = await admin
+    .from('messages')
+    .insert({
+      channel_id: channelId,
+      author_id: authorId,
+      // Deliberately wrong: target a reply, not a root.
+      thread_root_id: reply.id,
+      body: '__thread_flatten_probe',
+    })
+    .select('id, thread_root_id')
+    .single()
+  die('insert nested probe reply', insErr)
+
+  const flattened = nested!.thread_root_id === reply.thread_root_id
+
+  const { error: cleanErr } = await admin.from('messages').delete().eq('id', nested!.id)
+  die('remove nested probe reply', cleanErr)
+
+  if (!flattened) {
+    console.error(
+      `✗ thread flattening: replied to ${reply.id}, expected root ` +
+        `${reply.thread_root_id}, got ${nested!.thread_root_id}. Is the ` +
+        'flatten_thread_root trigger applied?',
+    )
+    process.exit(1)
+  }
+  console.log(
+    `✓ threads      one level deep — a reply to reply ${reply.id} was ` +
+      `rewritten to root ${reply.thread_root_id}`,
+  )
 }
 
 /**

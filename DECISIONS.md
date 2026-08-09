@@ -167,3 +167,53 @@ listed-*out* column still arrives. Do not rely on either reading without checkin
 
 **The column list stays.** It is harmless, it costs nothing, and it documents the
 intent. It is simply not load-bearing.
+
+---
+
+## #8 — 2026-08-09 — The one-level thread rule is enforced by a trigger, and pulled forward from BACKLOG
+
+**Decision.** `flatten_thread_root()`, a `before insert or update of thread_root_id`
+trigger on `public.messages`, enforces SPEC.md §1.3 in the database. It was a
+BACKLOG entry for about twenty minutes before Ethan chose to build it now; the
+backlog line is struck through and the work is a ROADMAP P1 item. Recording the
+pull-forward because the repo briefly contradicted itself, and Non-negotiable 4
+says a deviation gets written down in the commit that deviates.
+
+**Why now rather than v1.1.** `thread_root_id` is a plain FK to `messages(id)`,
+so nesting was schema-legal and only `threadRootFor()` in client code prevented
+it. P3 reuses `messages` for forum comments — a second code path that has to get
+the same rule right — and the cost of discovering a nested chain after the team
+beta is a data migration, not a bug fix.
+
+**Two branches, deliberately different.**
+
+| Case | Behaviour | Why |
+|---|---|---|
+| Reply targets another reply | **Rewrite** to that reply's root | Exactly what the client already computes, so every caller keeps working |
+| Re-parenting a message that has replies | **Raise** | No correct root exists to rewrite to; it would drag a whole thread down a level. No app or seed path issues it, so an exception surfaces a bug instead of hiding one |
+
+**`security definer`.** Kept for consistency with `handle_new_user()` and to keep
+the lookups independent of the caller's row visibility. It is belt-and-braces,
+not a requirement: Non-negotiable 2 already gives every authenticated user sight
+of every row. It grants nobody anything, because Postgres refuses direct calls
+to a `returns trigger` function.
+
+**Verification.** `scripts/seed.ts` gained `threadFlatteningCheck`, which sends
+what a *buggy* client would — a reply pointing at another reply — and asserts the
+stored row came back attached to the root. The existing `src/test/threads.test.ts`
+covers only the client helper and is no evidence the database rule exists.
+
+**Known limits, accepted.**
+- The flattening climbs exactly one level, which is correct only while the
+  invariant already holds. Restoring a pre-trigger backup containing a nested
+  chain would perpetuate it rather than repair it.
+- `for share` on the root lookup closes the concurrent re-parenting race. It
+  costs a row lock per *reply* insert — not per message, since top-level
+  messages return before it.
+
+**A property P3 must preserve.** `src/lib/pending.ts` reconciles an optimistic
+send against its confirmed row partly on `thread_root_id`. If the trigger ever
+rewrites that value for a message the client sent, the optimistic bubble never
+reconciles and sticks in "sending" forever. Safe today because the client always
+sends `threadRootFor(root)`, which equals what the trigger computes. **The forum
+comment path in P3 must keep that true.**

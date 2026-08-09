@@ -142,6 +142,7 @@ PK `(channel_id, user_id)`. Index on `(user_id)`.
 
 - `check ((channel_id is null) <> (post_id is null))` — exactly one set.
 - Indexes: `(channel_id, id)`, `(post_id, id)`, `(thread_root_id)`.
+- Trigger `flatten_thread_root()` `before insert or update of thread_root_id` enforces §1.3's one-level rule in the database: a reply pointing at another reply is **rewritten** to that reply's root. Re-parenting a message that already has replies **raises** — no code path does it, and there is no correct root to rewrite it to. Added in P1; see DECISIONS #8.
 - `search_tsv` generated + GIN — created in P0 while the table is empty so P5 needs no schema change on the busiest table.
 - Added to the `supabase_realtime` publication in P0 so P1 needs no migration.
 
