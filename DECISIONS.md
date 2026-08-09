@@ -91,3 +91,33 @@ Replica identity is left at the default (primary key), **not** `full`.
 **Why the last two.** Everything above them runs signed-in, so it cannot distinguish a correct policy from an over-permissive one: a policy written `to public` or `to anon`, or a table where `enable row level security` was simply forgotten, passes every signed-in assertion identically. A signed-out client separates the cases — under the intended `to authenticated` policy it must be able to do nothing. This matters more with each phase: P2–P5 add six more tables to the same pattern, and this script is the only thing standing between a copy-paste slip and a silently public table.
 
 **Known remaining gap.** The probe exercises `channels` only. A per-table sweep is cheap to add and should happen when the table count grows — noted here so it is a decision, not an oversight.
+
+---
+
+## #6 — 2026-08-09 — Channel state is a React context, not a state library
+
+**Decision.** The channel list lives in `ChannelsProvider` (`src/lib/channels.tsx`),
+a plain React context wrapping the app shell. `src/lib/useChannels.ts` — a
+standalone hook that fetched its own copy — is deleted; the sidebar and the
+`/channels` page now read the same context.
+
+**Why.** Channel CRUD created the app's first piece of genuinely shared client
+state: creating a channel on the `/channels` page has to show up in the sidebar
+without a refresh, and two independent `useChannels()` calls each holding their
+own `useState` cannot do that. The options were context or a store library.
+
+Non-negotiable 3 forbids adding a state-management framework without an entry
+here, and this does not earn one. The shared state is a single array that
+changes on explicit user action, with no cross-cutting subscriptions, no
+derived-state graph, and no performance problem to solve. Context costs zero
+dependencies and zero bundle bytes.
+
+**Consequence for P1.** The provider's `refresh()` is the seam where the
+realtime subscription lands. When Postgres Changes on `channels` arrives, it
+updates the same context and every consumer follows — no component changes
+needed. The local `setChannels` calls after each mutation stay as the optimistic
+path so the UI does not wait for a websocket round trip.
+
+**Revisit if** a future phase needs many independent slices of shared state with
+cross-slice derivations. Tasks (P2) and docs (P4) are the candidates. If that
+happens, supersede this entry rather than quietly adding a library.

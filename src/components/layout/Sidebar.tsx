@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
-import { useChannels } from '@/lib/useChannels'
+import { useChannels } from '@/lib/channels-context'
 
 function navClass({ isActive }: { isActive: boolean }) {
   return cn(
