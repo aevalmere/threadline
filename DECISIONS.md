@@ -43,7 +43,7 @@ Log an entry when: a locked-stack rule is bent, the schema deviates from `SPEC.m
 
 **Scope.** The `service_role` key this script needs lives in `.env.local` (gitignored) and is used *only* by `scripts/`. It is never imported from `src/`, never committed, and never placed in a Cloudflare Pages environment variable.
 
-**Amended same day, after reviewer FAIL.** The first version judged each verb on `!error`, which proves nothing: under RLS a denied UPDATE or DELETE is not an error — it matches zero rows and returns 204, and a denied SELECT returns 200 with `[]`. The check would have printed PASS against a table carrying only a select policy. It now judges every verb on **rows affected** (`.select()` on the update and delete, asserting exactly one row each; `> 0` rows on the select) and adds a fifth `cleanup` assertion confirming the probe row is really gone — otherwise a silently-blocked delete leaves debris that makes the *next* run fail on the unique `(name, kind)` constraint and look like an insert-policy problem.
+*Superseded in part by #5 — how the verbs are judged.*
 
 ---
 
@@ -60,8 +60,34 @@ alter publication supabase_realtime add table public.messages (
 
 Replica identity is left at the default (primary key), **not** `full`.
 
-**Why.** `search_tsv` is a stored generated column created in P0 so that P5 needs no schema change on the busiest table (SPEC.md §3). Without a column list, every Postgres Changes payload in P1 would ship the tsvector next to `body` — roughly double the websocket bytes per message, for data no client reads. `replica identity full` would similarly multiply WAL volume; it is unnecessary because soft deletes and edits are UPDATEs, which already carry the full new row. Both are Non-negotiable 8 (protect the free tier's realtime budget).
+**Why.** `search_tsv` is a stored generated column created in P0 so that P5 needs no schema change on the busiest table (SPEC.md §3). The intent is that no Postgres Changes payload in P1 ships the tsvector next to `body` — that would be roughly double the websocket bytes per message, for data no client reads. `replica identity full` would similarly multiply WAL volume; it is unnecessary because soft deletes and edits are UPDATEs, which already carry the full new row. Both are Non-negotiable 8 (protect the free tier's realtime budget).
+
+**The saving is intended, not yet measured.** Supabase Realtime reads WAL via `realtime.list_changes` → wal2json, which decodes stored tuples rather than consulting a pgoutput publication's column list, so `search_tsv` may ride along regardless. **Verify against a real payload at G1** and amend this entry with what is actually observed. The column list is harmless either way — `id` is included, so it covers the default replica identity and UPDATE/DELETE replicate legally.
 
 **Constraint this creates.** A future column added to `messages` is **not** replicated until a new migration re-declares the publication's column list. Any migration that adds a client-visible column to `messages` must also `alter publication supabase_realtime set table public.messages (…)` with the new column included.
 
 **Requires Postgres 15+.** Fine — Supabase provisions 17, and `supabase/config.toml` now says 17 to match.
+
+---
+
+## #5 — 2026-08-09 — The RLS check judges rows affected, and tests both directions
+
+**Supersedes the verification method in #3.** The rest of #3 — magic-link session minting, service_role scope — stands.
+
+**What was wrong.** The first version judged each verb on `!error`. That proves nothing. Under RLS a denied UPDATE or DELETE is *not* an error: the rows fail the `USING` clause, zero rows match, and PostgREST returns 204 with no error body. A denied SELECT returns 200 and `[]`. The check would have printed "PASS update / PASS delete" against a table carrying only a select policy — the one thing Non-negotiable 2 asks to be verified, verified hollowly. Caught by the reviewer subagent, which is the whole reason rule 7 exists.
+
+**Decision.** Every assertion is judged on **rows affected**, never on error presence:
+
+| Assertion | Passes when |
+|---|---|
+| `select` | more than 0 rows visible |
+| `insert` | the row comes back from `.select().single()` |
+| `update` | `.select()` returns exactly 1 row |
+| `delete` | `.select()` returns exactly 1 row |
+| `cleanup` | an admin re-query of the probe id returns 0 rows |
+| `anon select` | 0 rows, or an error, **without** a session |
+| `anon insert` | 0 rows, or an error, **without** a session |
+
+**Why the last two.** Everything above them runs signed-in, so it cannot distinguish a correct policy from an over-permissive one: a policy written `to public` or `to anon`, or a table where `enable row level security` was simply forgotten, passes every signed-in assertion identically. A signed-out client separates the cases — under the intended `to authenticated` policy it must be able to do nothing. This matters more with each phase: P2–P5 add six more tables to the same pattern, and this script is the only thing standing between a copy-paste slip and a silently public table.
+
+**Known remaining gap.** The probe exercises `channels` only. A per-table sweep is cheap to add and should happen when the table count grows — noted here so it is a decision, not an oversight.

@@ -206,8 +206,14 @@ async function rlsCheck(email: string) {
   console.log('─'.repeat(46))
 
   // Clear debris from any earlier interrupted run so the insert below is
-  // testing the policy, not the unique (name, kind) constraint.
-  await admin.from('channels').delete().eq('name', RLS_PROBE)
+  // testing the policy, not the unique (name, kind) constraint. If this fails
+  // silently the probe insert reports a duplicate key, which is exactly the
+  // confusion this line exists to prevent.
+  const { error: preCleanErr } = await admin
+    .from('channels')
+    .delete()
+    .eq('name', RLS_PROBE)
+  die('clear leftover RLS probe row', preCleanErr)
 
   const { data: link, error: linkErr } = await admin.auth.admin.generateLink({
     type: 'magiclink',
@@ -315,10 +321,12 @@ async function rlsCheck(email: string) {
     }
   }
 
+  results.push(...(await deniedWithoutSession()))
+
   for (const r of results) {
-    console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  ${r.verb.padEnd(7)} ${r.detail}`)
+    console.log(`  ${r.ok ? 'PASS' : 'FAIL'}  ${r.verb.padEnd(14)} ${r.detail}`)
   }
-  console.log('─'.repeat(46))
+  console.log('─'.repeat(60))
 
   await anon.auth.signOut()
 
@@ -326,7 +334,54 @@ async function rlsCheck(email: string) {
     console.error('\n✗ RLS check FAILED — the blanket policy is not correct.')
     process.exit(1)
   }
-  console.log('✓ RLS check PASSED — all four verbs work through the anon client.\n')
+  console.log('✓ RLS check PASSED — authenticated has full access, anon has none.\n')
+}
+
+/**
+ * The other half of Non-negotiable 2, and the half that catches drift.
+ *
+ * Every assertion above runs with a signed-in session, so it cannot tell a
+ * correct policy from an over-permissive one: a policy written `to public` or
+ * `to anon`, or a table where someone forgot `enable row level security`,
+ * passes all five identically. A signed-out client separates them — under the
+ * intended `to authenticated` policy it must be able to do nothing at all.
+ *
+ * Under RLS a denied read is not an error, it is an empty result, so reads and
+ * writes are judged on rows, not on error presence.
+ */
+async function deniedWithoutSession() {
+  const out: { verb: string; ok: boolean; detail: string }[] = []
+  const anon: SupabaseClient = createClient(URL!, ANON!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+
+  const sel = await anon.from('channels').select('id').limit(1)
+  const visible = sel.data?.length ?? 0
+  out.push({
+    verb: 'anon select',
+    ok: !!sel.error || visible === 0,
+    detail:
+      !!sel.error || visible === 0
+        ? 'denied'
+        : `${visible} rows readable without a session — RLS is off or the policy is not scoped to authenticated`,
+  })
+
+  const ins = await anon
+    .from('channels')
+    .insert({ name: `${RLS_PROBE}_anon`, kind: 'chat' })
+    .select('id')
+  const created = ins.data?.length ?? 0
+  out.push({
+    verb: 'anon insert',
+    ok: !!ins.error || created === 0,
+    detail: !!ins.error || created === 0 ? 'denied' : 'row created without a session',
+  })
+
+  // Clean up in case the insert was wrongly allowed, so the failure is
+  // reported without also poisoning the next run.
+  if (created > 0) await admin.from('channels').delete().eq('name', `${RLS_PROBE}_anon`)
+
+  return out
 }
 
 main().catch((err: unknown) => {
