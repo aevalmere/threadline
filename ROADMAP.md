@@ -13,9 +13,9 @@ One phase at a time. **A phase starts only after the user approves the previous 
 ## P0 — Foundation · Aug 9 *(orig. Aug 5–6)*
 
 - [x] Repo scaffold — Vite / React / TS, Tailwind, shadcn, ESLint, Vitest
-- [ ] App shell — sidebar (Channels / Forums / Docs / Tasks), ⌘K placeholder *(builds; renders behind auth — visually confirmed at G0)*
+- [x] App shell — sidebar (Channels / Forums / Docs / Tasks), ⌘K placeholder
 - [x] Supabase project wired via CLI migrations — `profiles`, `channels`, `channel_members`, `messages`
-- [ ] Magic-link auth, public signups disabled *(code shipped; unverified until a real link is redeemed at G0)*
+- [x] Magic-link auth, public signups disabled
 - [x] Seed script — 2 users, 2 channels, 50 messages — plus the four-verb anon RLS check
 - [x] GitHub → Cloudflare Pages auto-deploy — https://threadline-cc0.pages.dev
 - [x] `.env` handling — `.env*` gitignored in the first commit, `.env.example` committed
