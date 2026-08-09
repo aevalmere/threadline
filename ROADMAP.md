@@ -32,7 +32,7 @@ One phase at a time. **A phase starts only after the user approves the previous 
 - [ ] Uploads to Supabase Storage — 10 MB cap, inline image thumbnails
 - [ ] @mentions writing `notifications` rows
 - [ ] Unread badges via `last_read_message_id` *(batched writes — Non-negotiable 8)*
-- [ ] Reconnect-and-resync — `WHERE id > last_seen` on channel rejoin
+- [ ] Reconnect-and-resync — `WHERE id > last_seen` on channel rejoin *(also clears a known gap: a send that succeeds after the user leaves the channel leaves a stuck "sending" bubble if its row falls outside the first page on return)*
 - [ ] Infinite-scroll pagination, 50/page
 
 **GATE G1** — Two browsers: message appears in <1s both directions · hard refresh mid-thread loses nothing · network killed 30s then restored resyncs missed messages · image upload renders a thumbnail · unread badges correct across both users.

@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import AppShell from '@/components/layout/AppShell'
 import { AuthProvider } from '@/lib/auth'
 import AuthCallback from '@/routes/AuthCallback'
+import ChannelView from '@/routes/ChannelView'
 import Channels from '@/routes/Channels'
 import Docs from '@/routes/Docs'
 import Forums from '@/routes/Forums'
@@ -22,7 +23,7 @@ export default function App() {
             <Route element={<AppShell />}>
               <Route index element={<Navigate to="/channels" replace />} />
               <Route path="/channels" element={<Channels />} />
-              <Route path="/channels/:channelId" element={<Channels />} />
+              <Route path="/channels/:channelId" element={<ChannelView />} />
               <Route path="/forums" element={<Forums />} />
               <Route path="/forums/:channelId" element={<Forums />} />
               <Route path="/docs" element={<Docs />} />

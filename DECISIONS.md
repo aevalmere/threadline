@@ -121,3 +121,49 @@ path so the UI does not wait for a websocket round trip.
 **Revisit if** a future phase needs many independent slices of shared state with
 cross-slice derivations. Tasks (P2) and docs (P4) are the candidates. If that
 happens, supersede this entry rather than quietly adding a library.
+
+---
+
+## #7 — 2026-08-09 — Measured: the realtime payload carries `search_tsv` anyway
+
+**Answers the open question in #4.** Recorded as a new entry rather than an edit,
+because the convention at the top of this file is append-only and #5 set the
+precedent. #4's decision stands; only its *hoped-for saving* is disproved.
+
+**What was measured.** A script subscribed to Postgres Changes on `messages`
+through the anon client with a real user session, and a row was inserted against
+the live project. The event arrived, and `payload.new` contained:
+
+```
+id, body, post_id, author_id, edited_at, channel_id,
+created_at, deleted_at, search_tsv, thread_root_id
+```
+
+`search_tsv` is present. The publication column list from #4 — which deliberately
+omits it — **did not trim the payload**. This is exactly the failure mode #4
+predicted: Supabase Realtime reads WAL through `realtime.list_changes` →
+wal2json, which decodes the stored tuple rather than consulting a pgoutput
+publication's column list.
+
+**Cost.** For the probe, `body` was 20 bytes and `search_tsv` was 30
+(`'probe':3 'realtim':1 'smoke':2`). A tsvector is roughly the size of the text
+it indexes, so realtime traffic on the busiest table is about double what #4
+intended. At 5–30 teammates this is comfortably inside the free tier, so
+**nothing changes now** — Non-negotiable 8's concern is real but not yet binding,
+and a schema change here would be scope creep against the ship date.
+
+**The remedy, if it ever bites.** Drop the stored generated column and index the
+expression instead: `create index … using gin (to_tsvector('english', body))`.
+That gives P5 the same full-text search with no stored tsvector, so nothing rides
+along in either the WAL or the payload. It is a new migration (never edit one
+that has run) and it changes what `search_all()` queries, so it belongs to P5 or
+later — not to a chat item.
+
+**A caveat on #4's stated constraint.** #4 warns that a future column added to
+`messages` will not replicate until a migration re-declares the publication's
+column list. If the list is not consulted when building payloads, that constraint
+probably does not bind either. **Untested** — the measurement only shows that a
+listed-*out* column still arrives. Do not rely on either reading without checking.
+
+**The column list stays.** It is harmless, it costs nothing, and it documents the
+intent. It is simply not load-bearing.
