@@ -5,6 +5,7 @@ import {
   markPending,
   reconcilePending,
   reconcilePendingForChannel,
+  sweepQuery,
   type PendingMessage,
 } from '@/lib/pending'
 
@@ -195,5 +196,72 @@ describe('dropPending', () => {
   it('removes the addressed entry', () => {
     const p = [pending('k1', 'a'), pending('k2', 'b')]
     expect(dropPending(p, 'k1').map((x) => x.key)).toEqual(['k2'])
+  })
+})
+
+/**
+ * `sweepQuery` — the decision half of the stuck-bubble sweep (SPEC §1.5,
+ * ROADMAP's known gap against reconnect-and-resync).
+ *
+ * A send that succeeds *after* you leave a channel keeps its bubble, and on
+ * return the newest-50 page may not contain the confirming row, so the ordinary
+ * reconcile never sees it. The sweep asks a narrower question instead. These
+ * pin *what it asks*; `reconcilePendingForChannel` above pins what it does with
+ * the answer. Deleting either half fails this file.
+ */
+describe('sweepQuery', () => {
+  const ME = 'user-me'
+  const CH = 'channel-a'
+
+  const entry = (over: Partial<PendingMessage> = {}): PendingMessage => ({
+    key: 'k1',
+    body: 'did this send?',
+    authorId: ME,
+    channelId: CH,
+    threadRootId: null,
+    sinceId: 100,
+    status: 'sending',
+    ...over,
+  })
+
+  it('asks for nothing when nothing is outstanding', () => {
+    expect(sweepQuery([], CH, ME)).toBeNull()
+  })
+
+  it('asks for my messages after the outstanding send', () => {
+    expect(sweepQuery([entry()], CH, ME)).toEqual({ authorId: ME, afterId: 100 })
+  })
+
+  it('takes the oldest bound, not the newest', () => {
+    // A higher bound would exclude the confirmation of the oldest stuck entry —
+    // the one most likely to have scrolled out of the first page.
+    const out = sweepQuery(
+      [entry({ key: 'a', sinceId: 500 }), entry({ key: 'b', sinceId: 100 })],
+      CH,
+      ME,
+    )
+    expect(out).toEqual({ authorId: ME, afterId: 100 })
+  })
+
+  it('ignores another channel’s outstanding sends', () => {
+    expect(sweepQuery([entry({ channelId: 'channel-b' })], CH, ME)).toBeNull()
+    // …including when computing the bound.
+    const out = sweepQuery(
+      [entry({ key: 'a', channelId: 'channel-b', sinceId: 1 }), entry({ key: 'b' })],
+      CH,
+      ME,
+    )
+    expect(out).toEqual({ authorId: ME, afterId: 100 })
+  })
+
+  it('includes failed entries — a send can error after its row landed', () => {
+    expect(sweepQuery([entry({ status: 'failed' })], CH, ME)).toEqual({
+      authorId: ME,
+      afterId: 100,
+    })
+  })
+
+  it('ignores entries belonging to somebody else', () => {
+    expect(sweepQuery([entry({ authorId: 'someone-else' })], CH, ME)).toBeNull()
   })
 })

@@ -54,8 +54,10 @@ export function resolveJump(input: {
 
   const target = messages.find((m) => m.id === id)
   // Genuinely absent: an older message outside the loaded page, or a deleted
-  // one. Pagination is a later P1 item; until then this lands you in the
-  // channel, and the parameter is dropped so it does not retry forever.
+  // one. Scrollback pagination exists, but a jump does not page backwards
+  // hunting for a target — that is the BACKLOG deep-link entry, which P2's
+  // jump-to-source needs anyway. So this lands you in the channel, and the
+  // parameter is dropped rather than retrying forever.
   if (!target) return { status: 'miss' }
 
   return { status: 'hit', id, openThread: target.thread_root_id }

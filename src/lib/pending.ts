@@ -131,3 +131,42 @@ export function dropPending(
 ): PendingMessage[] {
   return pending.filter((p) => p.key !== key)
 }
+
+export interface SweepQuery {
+  /** Only your own messages can confirm your own pending sends. */
+  authorId: string
+  /** Exclusive lower bound: the oldest thing still outstanding. */
+  afterId: number
+}
+
+/**
+ * What to ask the server for when sweeping stuck bubbles — or null if nothing
+ * in this channel is waiting.
+ *
+ * This is the decision half of the sweep, split out so it is testable: the
+ * reconciliation half is `reconcilePendingForChannel`, and between them the
+ * only untested part left is the `await` that joins them.
+ *
+ * The bound is the **minimum** `sinceId` across everything outstanding, not the
+ * maximum — a higher bound would exclude the confirmation of the oldest stuck
+ * entry, which is precisely the one most likely to have scrolled out of the
+ * first page.
+ *
+ * **Includes `failed` entries, not just `sending`.** A send can error *after*
+ * its row committed (`reconcilePending` already reconciles those), so a bubble
+ * marked failed may still have landed. Leaving it out meant Retry would send a
+ * duplicate.
+ */
+export function sweepQuery(
+  pending: readonly PendingMessage[],
+  channelId: string,
+  authorId: string,
+): SweepQuery | null {
+  let afterId = Infinity
+  for (const p of pending) {
+    if (p.channelId !== channelId) continue
+    if (p.authorId !== authorId) continue
+    if (p.sinceId < afterId) afterId = p.sinceId
+  }
+  return afterId === Infinity ? null : { authorId, afterId }
+}

@@ -254,6 +254,11 @@ class Query implements PromiseLike<{ data: unknown; error: null | { message: str
     this.filters.push((r) => Number(r[col]) < Number(val))
     return this
   }
+  gt(col: string, val: unknown) {
+    // Used by resync and the pending sweep, both keyset scans on messages.id.
+    this.filters.push((r) => Number(r[col]) > Number(val))
+    return this
+  }
   is(col: string, val: unknown) {
     // Only `.is(col, null)` is used — by the bell's mark-read, which scopes its
     // update to unread rows so it cannot rewrite `read_at` on rows already

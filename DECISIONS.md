@@ -826,3 +826,75 @@ PASS against a function `anon` could execute happily. **A signed-out probe of a
 function must assert refusal, never emptiness.** #5 and #15 each said a version
 of this about tables; it is now said about functions too, having been learned a
 third time.
+
+---
+
+## #19 — 2026-08-11 — Resync drains; and what verifies the parts no harness reaches
+
+**Decision.** `resync()` walks forward page by page until it is caught up
+(`RESYNC_LIMIT` 200, `MAX_RESYNC_PAGES` 10) rather than taking one capped page,
+and it runs only once the channel's first page has landed. The stuck-bubble
+sweep is split into a pure `sweepQuery()` and the existing
+`reconcilePendingForChannel()`, and runs on **join** as well as on reconnect.
+
+**Why draining, not one page.** A single capped query leaves a hole in the
+middle that nothing can ever fill. `loadOlder` only walks *backwards* from the
+oldest row held, and one live INSERT after a truncated resync moves the forward
+cursor past the gap permanently — so the missed messages become unreachable for
+the session. SPEC §1.5 says missing an event is never data loss; the capped
+version quietly made it data loss above 200.
+
+**Why the guard is `loadedChannelId`, not `cursor === 0`.** The first draft
+bailed when the cursor was 0, which is true both while the first page is in
+flight *and* for a channel that is legitimately empty. In an empty channel that
+disabled reconnect entirely — and since an empty first page also sets
+`hasMore = false`, there was no scrollback path either, so messages inserted
+during a disconnect were unreachable until a reload. That is exactly G1's
+"network killed 30s then restored". Caught in review.
+
+**The sweep includes `failed` entries.** A send can error *after* its row
+committed — `reconcilePending` has always handled that — so filtering to
+`sending` meant Retry would send a duplicate.
+
+### What is actually verified, and what is not
+
+This matters more than usual here, because most of this feature lives in a hook
+and **the project has no React test harness** (recorded in #17). Being precise
+rather than implying more coverage than exists:
+
+**Pure and unit-tested.** `pageQuery` / `resyncQuery` / `highestMessageId` /
+`oldestMessageId` / `hasMorePages` / `mergeMessages` (P0), plus `sweepQuery` and
+`reconcilePendingForChannel` — the sweep's decision and its reconciliation.
+
+**Proved live against the database**, run from a throwaway channel and removed.
+Recorded here because a probe that leaves no trace is not evidence:
+
+```
+120-message pagination        450-row hole, drained
+  page sizes  50/50/20          drains fully   450 of 450
+  no overlap  120 distinct      no duplicates  450 distinct
+  newest first                  no gap         strictly ascending across pages
+  end detected                  terminates     3 pages at 200/page
+  resync window exact           never re-reads the cursor
+  resync no-op                  beats one page 450 > 200
+```
+
+**Not covered by anything automated:** the `await` that joins `sweepQuery` to
+`reconcilePendingForChannel`, the `SUBSCRIBED`-vs-reconnect branch, and the
+scroll-anchor restore. Their manual check, for G1:
+
+1. Two browsers in the same channel. In A, throttle to offline, have B send
+   three messages, restore A. A shows all three without a reload.
+2. Repeat with B sending **250+** messages while A is offline. A ends up with
+   all of them and no gap in the middle — the case the single query failed.
+3. In A, send a message and immediately click another channel. Have B send 60
+   messages in the first channel. Return to it: the "sending" bubble is gone,
+   not stuck, and the message appears exactly once.
+4. Scroll to the top of a channel with 100+ messages. Older messages load and
+   **the message under the cursor stays put** — no jump. Repeat while B is
+   actively sending, which is the case that steals the anchor.
+
+Item 4's second half is a known weakness: any arriving message consumes the
+scroll anchor, so a page landing right after one still jumps. Narrow, cosmetic,
+self-corrects on the next scroll — parked rather than fixed, because the fix is
+a per-request anchor and this is the last item before the G1 gate.

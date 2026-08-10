@@ -60,6 +60,9 @@ import { cn } from '@/lib/utils'
 /** How close to the bottom still counts as "following along", in pixels. */
 const STICK_THRESHOLD = 80
 
+/** How close to the top starts fetching older messages, in pixels. */
+const LOAD_MORE_THRESHOLD = 200
+
 export interface PreviewItem {
   attachment: Attachment
   url: string
@@ -87,6 +90,9 @@ export default function ChannelView() {
   const {
     messages,
     loadedChannelId,
+    hasMore,
+    loadingMore,
+    loadOlder,
     attachmentsByMessage,
     pending,
     loading,
@@ -103,6 +109,12 @@ export default function ChannelView() {
   const listRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<ComposerHandle>(null)
   const stickToBottom = useRef(true)
+  /**
+   * Distance from the bottom of the content, captured just before a scrollback
+   * page is requested and consumed by the layout effect that restores it.
+   * Null when no restore is pending.
+   */
+  const pendingScrollAnchor = useRef<number | null>(null)
   const [dragging, setDragging] = useState(false)
   const [preview, setPreview] = useState<PreviewItem | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Message | null>(null)
@@ -132,7 +144,24 @@ export default function ChannelView() {
     if (!el) return
     stickToBottom.current =
       el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD
-  }, [])
+
+    // Near the top means older messages are wanted. `loadOlder` is idempotent
+    // while a page is in flight, so firing on every scroll event is harmless.
+    if (el.scrollTop < LOAD_MORE_THRESHOLD && hasMore && !loading) {
+      // Remember how far the content extends *above* the viewport. Prepending
+      // rows grows scrollHeight, and the browser keeps scrollTop — so without
+      // the correction below the view would jump backwards by exactly the
+      // height of what was just added.
+      pendingScrollAnchor.current = el.scrollHeight - el.scrollTop
+      // Cleared only when nothing arrived. Not on `busy` — that call is one of
+      // the many this handler fires per second while near the top, and the
+      // anchor belongs to the request already in flight. Clearing it there
+      // would leave the landing page with nothing to restore against.
+      void loadOlder().then((result) => {
+        if (result === 'empty') pendingScrollAnchor.current = null
+      })
+    }
+  }, [hasMore, loading, loadOlder])
 
   // A fresh channel always opens pinned to the newest message, even if the
   // previous one was left scrolled up.
@@ -158,11 +187,32 @@ export default function ChannelView() {
     markRead(channelId, messages)
   }, [channelId, loadedChannelId, loading, messages, markRead])
 
+  /**
+   * Keep the reader's place when older messages are prepended.
+   *
+   * Runs before the browser paints, and *before* the follow-the-bottom effect
+   * below, so a scrollback load cannot flash at a wrong offset and cannot be
+   * mistaken for new activity. Restoring by distance-from-the-end rather than
+   * by a saved scrollTop is what makes it exact regardless of how tall the new
+   * rows turn out to be.
+   */
+  useLayoutEffect(() => {
+    const el = listRef.current
+    const anchor = pendingScrollAnchor.current
+    if (!el || anchor === null) return
+    pendingScrollAnchor.current = null
+    el.scrollTop = el.scrollHeight - anchor
+  }, [messages])
+
   // Follow new messages only when already at the bottom — otherwise reading
   // scrollback would be yanked away every time someone types.
   useLayoutEffect(() => {
     const el = listRef.current
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
+    // Never while restoring a scrollback position: `stickToBottom` is false
+    // then anyway, but the ordering matters more than the flag.
+    if (el && stickToBottom.current && pendingScrollAnchor.current === null) {
+      el.scrollTop = el.scrollHeight
+    }
   }, [messages, pending])
 
   /**
@@ -310,6 +360,28 @@ export default function ChannelView() {
               <span className="sr-only">Dismiss</span>
             </button>
           </p>
+        )}
+
+        {!loading && hasMore && (
+          <div className="flex justify-center pb-2">
+            {loadingMore ? (
+              <span className="text-muted-foreground text-xs">Loading older messages…</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  const el = listRef.current
+                  if (el) pendingScrollAnchor.current = el.scrollHeight - el.scrollTop
+                  void loadOlder().then((result) => {
+                    if (result === 'empty') pendingScrollAnchor.current = null
+                  })
+                }}
+                className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
+              >
+                Load older messages
+              </button>
+            )}
+          </div>
         )}
 
         {loading ? (

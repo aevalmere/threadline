@@ -38,8 +38,8 @@ One phase at a time. **A phase starts only after the user approves the previous 
 - [x] @mentions writing `notifications` rows *(keys on `username`, so it follows the account system)*
 - [x] **Notification bell** — panel, mark-read, in-app toast, and a browser notification when the tab is hidden *(pulled forward from P5 on Ethan's call; DECISIONS #16)*
 - [x] Unread badges via `last_read_message_id` *(batched writes — Non-negotiable 8; counting moved into SQL, DECISIONS #18)*
-- [ ] Reconnect-and-resync — `WHERE id > last_seen` on channel rejoin *(also clears a known gap: a send that succeeds after the user leaves the channel leaves a stuck "sending" bubble if its row falls outside the first page on return)*
-- [ ] Infinite-scroll pagination, 50/page
+- [x] Reconnect-and-resync — `WHERE id > last_seen`, draining until caught up *(the stuck-"sending"-bubble gap is closed by `sweepPending`, which runs on join as well as on reconnect)*
+- [x] Infinite-scroll pagination, 50/page *(keyset on `id`, scroll position preserved)*
 
 **GATE G1** — Two browsers: message appears in <1s both directions · hard refresh mid-thread loses nothing · network killed 30s then restored resyncs missed messages · image upload renders a thumbnail · unread badges correct across both users.
 

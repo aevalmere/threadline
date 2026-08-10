@@ -8,11 +8,19 @@ import {
   type Attachment,
 } from '@/lib/attachments'
 import { parseMentions } from '@/lib/mentions'
-import { highestMessageId, mergeMessages, pageQuery } from '@/lib/messages'
+import {
+  hasMorePages,
+  highestMessageId,
+  mergeMessages,
+  oldestMessageId,
+  pageQuery,
+  resyncQuery,
+} from '@/lib/messages'
 import {
   dropPending,
   markPending,
   reconcilePendingForChannel,
+  sweepQuery,
   type PendingMessage,
 } from '@/lib/pending'
 import { useProfiles } from '@/lib/profiles-context'
@@ -31,6 +39,21 @@ const ATTACHMENT_COLUMNS =
   'id, owner_type, owner_id, storage_path, filename, mime, size_bytes, created_at'
 
 const BUCKET = 'attachments'
+
+/**
+ * Rows per resync query. Not a ceiling on what a resync recovers — `resync`
+ * walks forward page by page until it is caught up, because a hole left in the
+ * middle could never be filled afterwards: `loadOlder` only ever walks
+ * backwards from the oldest row held, and one live INSERT moves the forward
+ * cursor past the gap permanently.
+ */
+const RESYNC_LIMIT = 200
+
+/**
+ * How many resync pages to walk before giving up. 200 × 10 is a long outage;
+ * beyond it, reopening the channel is cheaper than draining in the background.
+ */
+const MAX_RESYNC_PAGES = 10
 
 export interface Message {
   id: number
@@ -91,6 +114,14 @@ export function useMessages(channelId: string | undefined) {
   // and churn every composer handler.
   const profilesRef = useRef(profilesById)
   profilesRef.current = profilesById
+  // Same reason again: resync sweeps the optimistic queue, and depending on it
+  // would rebuild resync — and re-run the effects that hold it — on every send.
+  const pendingRef = useRef<PendingMessage[]>([])
+  pendingRef.current = pending
+  // Whether this channel's first page has landed — the real precondition for
+  // draining forward. Read inside `resync` without becoming a dependency.
+  const loadedChannelIdRef = useRef<string | undefined>(undefined)
+  loadedChannelIdRef.current = loadedChannelId
 
   /**
    * Bumped whenever the open channel changes. `/channels/:channelId` renders
@@ -138,11 +169,232 @@ export function useMessages(channelId: string | undefined) {
     })
   }, [messages, channelId])
 
+  /**
+   * True once this channel's subscription has reached SUBSCRIBED at least
+   * once, so the callback can tell a first join from a reconnect.
+   */
+  const joined = useRef(false)
+  /** True while a drain is running, so overlapping wake signals collapse. */
+  const resyncing = useRef(false)
+
+  /**
+   * Older scrollback — SPEC §1.5's other half, 50 at a time.
+   *
+   * Walks backwards from the oldest id held, which is what makes this a keyset
+   * scan rather than an OFFSET: a message arriving while you read does not
+   * shift the window and make you re-read a row or skip one.
+   *
+   * `hasMore` starts true and is only ever turned off by a short page, so a
+   * channel whose history is an exact multiple of the page size costs one
+   * extra empty query rather than hiding its last page.
+   */
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const loadingMoreRef = useRef(false)
+
+  /**
+   * Fetch one page of scrollback.
+   *
+   * Three outcomes, not two, because the caller has to keep the reader's scroll
+   * position and a boolean cannot say which of these happened:
+   *
+   *   `loaded` — rows were prepended; the caller's anchor is about to be used
+   *   `empty`  — nothing arrived; the caller should drop its anchor
+   *   `busy`   — another call already owns this load, **and its anchor**
+   *
+   * `busy` is the common path: `onScroll` fires every frame while near the top,
+   * so most calls bail. An earlier version returned false for it, and the
+   * caller dutifully cleared the anchor belonging to the request still in
+   * flight — so the page landed with nothing to restore and jumped the reader
+   * backwards by exactly its own height. Precisely the bug the anchor exists
+   * to prevent, on the primary path.
+   */
+  const loadOlder = useCallback(async (): Promise<'loaded' | 'empty' | 'busy'> => {
+    if (loadingMoreRef.current) return 'busy'
+    if (!channelId) return 'empty'
+    const before = oldestMessageId(messagesRef.current)
+    // Nothing held yet means the first page is still in flight; it will set
+    // the cursor this needs.
+    if (before === null) return 'empty'
+
+    loadingMoreRef.current = true
+    setLoadingMore(true)
+    const epoch = epochRef.current
+
+    const q = pageQuery(channelId, before)
+    const { data, error: err } = await supabase
+      .from('messages')
+      .select(MESSAGE_COLUMNS)
+      .eq('channel_id', q.channelId)
+      .lt('id', q.beforeId!)
+      .order('id', { ascending: q.ascending })
+      .limit(q.limit)
+
+    // A page that arrives after a channel switch belongs to the channel that
+    // asked for it, not the one now on screen. Checked *before* clearing the
+    // in-flight flag, which the new channel's own load now owns.
+    // A page that arrives after a channel switch is the *previous* channel's;
+    // `busy` rather than `empty` so the caller leaves the new channel's anchor
+    // alone — this call no longer owns anything.
+    if (epochRef.current !== epoch) return 'busy'
+    loadingMoreRef.current = false
+    setLoadingMore(false)
+    if (err) return 'empty'
+
+    const rows = (data ?? []) as Message[]
+    setHasMore(hasMorePages(rows.length, q.limit))
+    if (rows.length === 0) return 'empty'
+
+    absorb(rows)
+
+    void supabase
+      .from('attachments')
+      .select(ATTACHMENT_COLUMNS)
+      .eq('owner_type', 'message')
+      .in(
+        'owner_id',
+        rows.map((m) => String(m.id)),
+      )
+      .then(({ data: att }) => {
+        if (att && epochRef.current === epoch) absorbAttachments(att as Attachment[])
+      })
+
+    return 'loaded'
+  }, [channelId, absorb, absorbAttachments])
+
+  /**
+   * Cancel a stuck "sending" bubble whose row actually landed.
+   *
+   * Separate from `resync` because it has to run on a **channel join** too,
+   * and the join deliberately does not resync. The gap ROADMAP records against
+   * this item is exactly a join: a send that succeeds *after* you navigate away
+   * keeps its bubble (the epoch bail in `send` skips the merge), and on return
+   * the newest-50 page may not contain that row if others have talked since —
+   * so the reconcile effect never sees the confirmation and the bubble sticks
+   * forever. An earlier version put this inside `resync` alone, which meant it
+   * could never fire on the one path it was written for.
+   *
+   * Asks a narrower question than the page fetch: your own messages here, newer
+   * than the oldest thing still outstanding. That finds the row however far it
+   * has scrolled off, and reads a short window rather than the whole history.
+   */
+  const sweepPending = useCallback(async () => {
+    if (!channelId || !userId) return
+    const ask = sweepQuery(pendingRef.current, channelId, userId)
+    if (!ask) return
+
+    const epoch = epochRef.current
+    const { data: mine } = await supabase
+      .from('messages')
+      .select(MESSAGE_COLUMNS)
+      .eq('channel_id', channelId)
+      .eq('author_id', ask.authorId)
+      .gt('id', ask.afterId)
+      .order('id', { ascending: true })
+      .limit(RESYNC_LIMIT)
+    if (!mine || epochRef.current !== epoch) return
+
+    setPending((current) => {
+      const next = reconcilePendingForChannel(current, mine as Message[], channelId)
+      return next.length === current.length ? current : next
+    })
+  }, [channelId, userId])
+
+  /**
+   * Everything missed while disconnected — SPEC §1.5.
+   *
+   * Realtime is best-effort: a dropped socket silently loses every event it
+   * would have delivered. This refetches `WHERE channel_id = ? AND id >
+   * <highest held>` — a keyset scan on the monotonic id `messages` has for
+   * exactly this reason (DECISIONS #2) — and merges, so missing an event is
+   * never data loss.
+   *
+   * **It drains, rather than taking one page.** A single capped query would
+   * leave a hole in the middle that nothing could ever fill: `loadOlder` walks
+   * backwards from the *oldest* row held, and one live INSERT afterwards moves
+   * the cursor past the gap for good. So it walks forward until a short page
+   * says it is caught up, bounded by `MAX_RESYNC_PAGES` — past which the
+   * outage was long enough that a reload is the honest answer.
+   *
+   * **Every await is epoch-guarded.** This can be in flight across a channel
+   * switch (a tab focus followed by a click in the sidebar is enough), and this
+   * hook is *not* remounted by that — `absorb` would merge #general's rows into
+   * the array #random is rendering, poisoning both the resync cursor and the
+   * read pointer, neither of which moves backwards.
+   */
+  const resync = useCallback(async () => {
+    if (!channelId || resyncing.current) return
+    // A laptop wake can fire `online`, `visibilitychange` and a reconnect
+    // `SUBSCRIBED` within the same second. `mergeMessages` would dedupe the
+    // results, but each pass now costs up to ten round trips, so they are
+    // collapsed into one rather than amplified threefold.
+    resyncing.current = true
+    const epoch = epochRef.current
+
+    // Drain only once this channel's first page has landed. Until then the
+    // cursor is 0 and walking forward would pull the channel's *oldest* rows,
+    // then merge the newest page on top — the mid-list hole this loop exists to
+    // avoid. Keyed on `loadedChannelId`, not on the cursor being 0: a channel
+    // that is legitimately empty also has cursor 0, and it still needs
+    // reconnect to fetch what arrived while the socket was down. That case is
+    // exactly G1's "network killed 30s then restored".
+    if (loadedChannelIdRef.current !== channelId) {
+      resyncing.current = false
+      return
+    }
+
+    let cursor = highestMessageId(messagesRef.current)
+    for (let page = 0; page < MAX_RESYNC_PAGES; page += 1) {
+      const q = resyncQuery(channelId, cursor)
+      const { data, error: err } = await supabase
+        .from('messages')
+        .select(MESSAGE_COLUMNS)
+        .eq('channel_id', q.channelId)
+        .gt('id', q.afterId)
+        .order('id', { ascending: q.ascending })
+        .limit(RESYNC_LIMIT)
+      if (err || epochRef.current !== epoch) {
+        resyncing.current = false
+        return
+      }
+
+      const rows = (data ?? []) as Message[]
+      if (rows.length === 0) break
+
+      absorb(rows)
+      cursor = highestMessageId(rows)
+
+      // Attachments for what arrived, on the same reasoning as the page fetch:
+      // no FK for PostgREST to embed across (DECISIONS #2).
+      void supabase
+        .from('attachments')
+        .select(ATTACHMENT_COLUMNS)
+        .eq('owner_type', 'message')
+        .in(
+          'owner_id',
+          rows.map((m) => String(m.id)),
+        )
+        .then(({ data: att }) => {
+          if (att && epochRef.current === epoch) absorbAttachments(att as Attachment[])
+        })
+
+      if (rows.length < RESYNC_LIMIT) break
+    }
+
+    await sweepPending()
+    resyncing.current = false
+  }, [channelId, absorb, absorbAttachments, sweepPending])
+
   // Load the first page, then subscribe. Re-runs on channel change.
   useEffect(() => {
     if (!channelId) return
 
     epochRef.current += 1
+    joined.current = false
+    resyncing.current = false
+    loadingMoreRef.current = false
+    setHasMore(true)
+    setLoadingMore(false)
     let active = true
     setLoading(true)
     setError(null)
@@ -173,8 +425,13 @@ export function useMessages(channelId: string | undefined) {
       // by id, so the newest-first wire order lands correctly regardless.
       const rows = (data ?? []) as Message[]
       absorb(rows)
+      setHasMore(hasMorePages(rows.length, q.limit))
       setLoadedChannelId(channelId)
       setLoading(false)
+
+      // Cancel any bubble whose row landed while we were away. This is the
+      // join, so `resync` deliberately has not run — see `sweepPending`.
+      void sweepPending()
 
       // Attachments for the page just loaded. A separate query rather than a
       // PostgREST embed, because owner_id is text and messages.id is bigint —
@@ -237,13 +494,49 @@ export function useMessages(channelId: string | undefined) {
           absorbAttachments([payload.new as Attachment])
         },
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (!active) return
+        // `SUBSCRIBED` fires on the first join *and* on every reconnect, so
+        // the first one is skipped: the page fetch above already covers the
+        // join. Anything after that means the socket dropped and came back,
+        // and whatever committed in between was never delivered.
+        if (status !== 'SUBSCRIBED') return
+        if (!joined.current) {
+          joined.current = true
+          return
+        }
+        void resync()
+      })
 
     return () => {
       active = false
       void supabase.removeChannel(channel)
     }
-  }, [channelId, absorb, absorbAttachments])
+  }, [channelId, absorb, absorbAttachments, resync, sweepPending])
+
+  /**
+   * Also resync when the browser says the network is back, and when the tab is
+   * shown again.
+   *
+   * Neither is redundant with the subscription callback. A laptop that slept
+   * can hold a socket the OS has already torn down, so the client believes it
+   * is subscribed and no status change ever fires; coming back to the tab is
+   * the only signal that anything happened. `resync` is a single keyset query
+   * that returns nothing when nothing was missed, so an extra call is cheap.
+   */
+  useEffect(() => {
+    if (!channelId) return
+
+    const onWake = () => {
+      if (document.visibilityState === 'visible') void resync()
+    }
+    window.addEventListener('online', onWake)
+    document.addEventListener('visibilitychange', onWake)
+    return () => {
+      window.removeEventListener('online', onWake)
+      document.removeEventListener('visibilitychange', onWake)
+    }
+  }, [channelId, resync])
 
   /**
    * Write the bell rows for a message that just landed — SPEC §1.9.
@@ -577,6 +870,9 @@ export function useMessages(channelId: string | undefined) {
   return {
     messages,
     loadedChannelId,
+    hasMore,
+    loadingMore,
+    loadOlder,
     attachmentsByMessage,
     pending: visiblePending,
     loading,

@@ -547,3 +547,83 @@ describe('mock unread_counts', () => {
     expect(here!.unread).toBe(0)
   })
 })
+
+/**
+ * `gt` — the keyset operator behind resync and the pending sweep (SPEC §1.5).
+ * Without it, switching tabs in mock mode throws.
+ */
+describe('mock gt', () => {
+  const CH = '10000000-0000-4000-8000-000000000001'
+
+  it('returns only rows strictly above the cursor', async () => {
+    const ids: number[] = []
+    for (const body of ['a', 'b', 'c']) {
+      const { data } = await mockSupabase
+        .from('messages')
+        .insert({ channel_id: CH, author_id: 'u1', body })
+        .select('id')
+        .single()
+      ids.push((data as { id: number }).id)
+    }
+
+    const { data } = await mockSupabase
+      .from('messages')
+      .select('*')
+      .eq('channel_id', CH)
+      .gt('id', ids[0])
+      .order('id', { ascending: true })
+    const got = (data as { id: number }[]).map((m) => m.id)
+    expect(got).toEqual([ids[1], ids[2]])
+
+    // Strictly greater — the cursor row itself is never re-fetched.
+    expect(got).not.toContain(ids[0])
+
+    for (const id of ids) await mockSupabase.from('messages').delete().eq('id', id)
+  })
+
+  it('returns nothing when nothing is newer, which is the common case', async () => {
+    const { data: made } = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CH, author_id: 'u1', body: 'only' })
+      .select('id')
+      .single()
+    const id = (made as { id: number }).id
+    const { data } = await mockSupabase.from('messages').select('*').gt('id', id)
+    expect((data as unknown[]).length).toBe(0)
+    await mockSupabase.from('messages').delete().eq('id', id)
+  })
+})
+
+/**
+ * `lt` — the operator behind scrollback (`loadOlder`). Its counterpart `gt` has
+ * a test above; without one here, deleting `lt` would break paging in mock mode
+ * with the suite still green.
+ */
+describe('mock lt', () => {
+  const CH = '10000000-0000-4000-8000-000000000001'
+
+  it('returns only rows strictly below the cursor, newest first', async () => {
+    const ids: number[] = []
+    for (const body of ['a', 'b', 'c']) {
+      const { data } = await mockSupabase
+        .from('messages')
+        .insert({ channel_id: CH, author_id: 'u1', body })
+        .select('id')
+        .single()
+      ids.push((data as { id: number }).id)
+    }
+
+    const { data } = await mockSupabase
+      .from('messages')
+      .select('*')
+      .eq('channel_id', CH)
+      .lt('id', ids[2])
+      .order('id', { ascending: false })
+    const got = (data as { id: number }[]).map((m) => m.id)
+    expect(got).toEqual([ids[1], ids[0]])
+    // Strictly less — the cursor row is never returned twice.
+    expect(got).not.toContain(ids[2])
+
+    for (const id of ids) await mockSupabase.from('messages').delete().eq('id', id)
+  })
+})
