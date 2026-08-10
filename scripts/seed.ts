@@ -345,6 +345,88 @@ async function storageCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
 }
 
 /**
+ * `notifications` — SPEC §1.9, DECISIONS #15.
+ *
+ * The bell's rows are written by the *sender's* client rather than a trigger,
+ * so the blanket policy has to permit an authenticated teammate to insert a row
+ * addressed to **someone else**. That is the unusual bit worth asserting: it is
+ * the one table where a normal write targets another user's data, and a policy
+ * accidentally scoped to `user_id = auth.uid()` would break mentions while
+ * every other check in this script still passed.
+ */
+async function notificationsCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
+  const out: ProbeResult[] = []
+
+  const me = await ensureUser(EMAIL_A)
+  const other = await ensureUser(EMAIL_B)
+
+  const ins = await anon
+    .from('notifications')
+    .insert({
+      user_id: other,
+      kind: 'mention',
+      actor_id: me,
+      entity_type: 'message',
+      entity_id: '__probe',
+    })
+    .select('id')
+    .single<{ id: string }>()
+  out.push({
+    verb: 'notif insert',
+    ok: !ins.error && !!ins.data,
+    detail: ins.error?.message ?? 'notified another user, as mentions require',
+  })
+
+  if (!ins.data) {
+    for (const verb of ['notif read', 'notif kind', 'notif delete']) {
+      out.push({ verb, ok: false, detail: 'skipped — insert failed' })
+    }
+    return out
+  }
+
+  const sel = await anon.from('notifications').select('id').eq('id', ins.data.id)
+  out.push({
+    verb: 'notif read',
+    ok: !sel.error && (sel.data?.length ?? 0) === 1,
+    detail: sel.error ? sel.error.message : `${sel.data?.length ?? 0} rows visible`,
+  })
+
+  // The CHECK constraint on `kind`, so a typo in client code fails loudly
+  // rather than writing a row the bell will never render.
+  const bad = await anon
+    .from('notifications')
+    .insert({
+      user_id: other,
+      kind: 'nonsense',
+      actor_id: me,
+      entity_type: 'message',
+      entity_id: '__probe',
+    })
+    .select('id')
+  out.push({
+    verb: 'notif kind',
+    ok: bad.error?.code === '23514',
+    detail:
+      bad.error?.code === '23514'
+        ? 'an unknown kind was rejected (23514)'
+        : `unknown kind accepted — ${bad.error?.message ?? 'no error'}`,
+  })
+
+  const del = await anon
+    .from('notifications')
+    .delete()
+    .eq('entity_id', '__probe')
+    .select('id')
+  out.push({
+    verb: 'notif delete',
+    ok: !del.error && (del.data?.length ?? 0) >= 1,
+    detail: del.error ? del.error.message : `${del.data?.length ?? 0} probe rows removed`,
+  })
+
+  return out
+}
+
+/**
  * The account system — DECISIONS #14, and the evidence for the usernames
  * migration.
  *
@@ -674,6 +756,7 @@ async function rlsCheck(email: string) {
 
   results.push(...(await attachmentsCheck(anon)))
   results.push(...(await storageCheck(anon)))
+  results.push(...(await notificationsCheck(anon)))
   results.push(...(await accountsCheck()))
   results.push(...(await deniedWithoutSession()))
 
@@ -737,6 +820,51 @@ async function deniedWithoutSession() {
 
   // Clean up in case the insert was wrongly allowed, so the failure is
   // reported without also poisoning the next run.
+
+  // Notifications carry who-mentioned-whom, so a policy slip there leaks the
+  // shape of private conversations to anyone holding the anon key.
+  //
+  // A row has to be planted first. Every other signed-out probe here reads a
+  // table `main()` guarantees is populated; `notifications` is not, and an
+  // empty table returns `[]` to a signed-out client under *any* policy — even
+  // none at all. Without this the probe would print PASS having proven
+  // nothing, which is exactly the hollow verification DECISIONS #5 exists to
+  // prevent. Planted with `admin`, so it exists regardless of policy.
+  const plantedId = crypto.randomUUID()
+  const planted = await admin.from('notifications').insert({
+    id: plantedId,
+    user_id: await ensureUser(EMAIL_A),
+    kind: 'mention',
+    actor_id: await ensureUser(EMAIL_B),
+    entity_type: 'message',
+    entity_id: '__anon_probe',
+  })
+
+  if (planted.error) {
+    out.push({
+      verb: 'anon notifs',
+      ok: false,
+      detail: `could not plant a probe row: ${planted.error.message}`,
+    })
+  } else {
+    const notif = await anon.from('notifications').select('id').limit(1)
+    const notifVisible = notif.data?.length ?? 0
+    const canRead = !notif.error && notifVisible > 0
+    out.push({
+      verb: 'anon notifs',
+      ok: !canRead,
+      detail: canRead
+        ? `${notifVisible} notification rows readable without a session — a mention leaks who mentioned whom`
+        : 'denied (with a row present, so this means denied and not empty)',
+    })
+    // Judged, not fired and forgotten: `notificationsCheck` deletes on
+    // `entity_id = '__probe'` and would never sweep up this row, so a silent
+    // failure here accumulates debris nothing else removes.
+    die('remove the planted anon probe row', (await admin
+      .from('notifications')
+      .delete()
+      .eq('id', plantedId)).error)
+  }
 
   // Storage has its own policy surface (DECISIONS #9), so it needs its own
   // signed-out probe: the four bucket-scoped policies are `to authenticated`,

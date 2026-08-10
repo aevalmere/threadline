@@ -567,3 +567,65 @@ deleted afterwards.
 - A dashboard invite whose email local part collides with an existing username
   gets a numeric suffix; a username *chosen at registration* that collides
   raises instead. Different on purpose — see the migration's comment.
+
+---
+
+## #15 — 2026-08-10 — Mentions are plain `@username`, and the bell rows are written client-side
+
+**Decision.** `@mentions` resolve on `profiles.username`. They are stored as
+plain `@username` inside `messages.body` — no `<@uuid>` markup — and the
+`notifications` rows they produce are inserted by the **sender's client**, not by
+a database trigger.
+
+**Why username and not display name.** Usernames are unique; display names are
+not (SPEC §2.3). A mention of "Ethan" in a team with two of them has no correct
+answer. This is the reason the account system (#14) had to land first: an earlier
+draft of `mentions.ts` matched on `display_name` and was deleted rather than
+shipped, because it could only ever have guessed.
+
+**Why plain text and not markup.** The body stays readable everywhere our own
+components are not doing the rendering — a notification snippet, a `ts_headline`
+search result, a psql query. `search_tsv` indexes words instead of uuids
+(SPEC §3). And P2 seeds a task title straight from a message body, which would
+otherwise mean stripping markup first.
+
+The cost: renaming a teammate breaks older mentions of them. The text still reads
+`@ethan`, it just stops highlighting. At 5–30 people whose usernames come from
+their email local part, renames are rare and the failure is cosmetic — a better
+trade than uuids in the body.
+
+**Why the client writes the rows.** A trigger would have to re-parse `@names` in
+SQL against `profiles`: the same rule in a second language, kept in sync by hope.
+`parseMentions` and `splitMentions` already share one matcher precisely so that
+what is highlighted and who is notified cannot disagree; adding a third
+implementation in plpgsql would undo that. The blanket policy already permits the
+insert.
+
+**The one genuinely unusual RLS property.** `notifications` is the only table
+where a normal write targets **another user's** row — the sender inserts a row
+addressed to the person they mentioned. Non-negotiable 2's blanket policy allows
+this; a policy scoped `user_id = auth.uid()` would break mentions entirely while
+every other check still passed. `notificationsCheck` in `scripts/seed.ts` asserts
+it directly, signed in as user A and inserting for user B.
+
+**A probe that proved nothing, and now does.** The signed-out `anon notifs` check
+first read an empty table, so it returned `[]` and passed under *any* policy —
+including none. Zero rows meant "empty", not "denied". It now plants a row with
+the admin client, reads it back signed-out, and removes it. Caught by the
+reviewer; it is the same hollow-verification failure #5 was written to close, and
+it reappeared the moment a probe ran against a table the seed does not populate.
+**Any future signed-out probe must guarantee the row it expects not to see.**
+
+**Known limits, accepted.**
+- A reply notification is skipped when the thread root is not in the loaded page.
+  Unreachable from the composer — a root must be rendered to be repliable — but
+  reachable if the channel is switched while the insert is in flight. One lost
+  bell in that window beats a query on every reply.
+- `splitMentions` bounds its longest-match scan at `USERNAME_MAX`. Without that
+  cap a legal message — an `@` followed by ten thousand dots — costs ~10^8
+  character operations on every render.
+- Rendering shows `@display_name` while the body stores `@username`, so two
+  teammates with the same display name render identically and P5's search
+  snippets will show the stored form instead. A product call, revisit if it bites.
+- No UPDATE probe on `notifications` yet; `read_at` is the bell's only write and
+  it lands with the bell UI.

@@ -7,6 +7,7 @@ import {
   validateFile,
   type Attachment,
 } from '@/lib/attachments'
+import { parseMentions } from '@/lib/mentions'
 import { highestMessageId, mergeMessages, pageQuery } from '@/lib/messages'
 import {
   dropPending,
@@ -14,6 +15,7 @@ import {
   reconcilePendingForChannel,
   type PendingMessage,
 } from '@/lib/pending'
+import { useProfiles } from '@/lib/profiles-context'
 import { supabase } from '@/lib/supabase'
 
 /**
@@ -57,6 +59,7 @@ export interface Message {
  */
 export function useMessages(channelId: string | undefined) {
   const { authorId: userId } = useAuth()
+  const { byId: profilesById } = useProfiles()
 
   const [messages, setMessages] = useState<Message[]>([])
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -72,6 +75,11 @@ export function useMessages(channelId: string | undefined) {
   // re-created every time one arrives.
   const attachmentsRef = useRef<Attachment[]>([])
   attachmentsRef.current = attachments
+  // And again: send() resolves @mentions against the profile list, but putting
+  // it in the dependency array would re-create send the moment profiles load
+  // and churn every composer handler.
+  const profilesRef = useRef(profilesById)
+  profilesRef.current = profilesById
 
   /**
    * Bumped whenever the open channel changes. `/channels/:channelId` renders
@@ -225,6 +233,77 @@ export function useMessages(channelId: string | undefined) {
   }, [channelId, absorb, absorbAttachments])
 
   /**
+   * Write the bell rows for a message that just landed — SPEC §1.9.
+   *
+   * Client-side rather than a trigger, because a trigger would have to re-parse
+   * @names in SQL against `profiles`: the same rule in a second language, kept
+   * in sync by hope. DECISIONS #15.
+   *
+   * Never notifies you about your own message, in either kind. Mentioning
+   * yourself is a normal thing to do while writing, and replying in your own
+   * thread should not ring your own bell.
+   */
+  const notify = useCallback(
+    async (message: Message, threadRootId: number | null) => {
+      if (!userId) return
+
+      const profiles = [...profilesRef.current.values()]
+      const rows: {
+        user_id: string
+        kind: 'mention' | 'reply'
+        actor_id: string
+        entity_type: string
+        entity_id: string
+      }[] = []
+      const claimed = new Set<string>([userId])
+
+      for (const id of parseMentions(message.body, profiles)) {
+        if (claimed.has(id)) continue
+        claimed.add(id)
+        rows.push({
+          user_id: id,
+          kind: 'mention',
+          actor_id: userId,
+          entity_type: 'message',
+          entity_id: String(message.id),
+        })
+      }
+
+      // A reply notifies whoever started the thread — but only if they were not
+      // already mentioned in the same message, or they would get two bells for
+      // one event.
+      //
+      // The root is looked up in the loaded page. If it is not there the reply
+      // notification is silently skipped: unreachable from the composer, since
+      // a root must be rendered to be repliable, but reachable if the channel
+      // is switched while the INSERT is in flight — the load effect has
+      // already cleared `messages` by then. Losing one bell in that window is
+      // better than a query on every reply; mentions are unaffected either way.
+      if (threadRootId !== null) {
+        const root = messagesRef.current.find((m) => m.id === threadRootId)
+        if (root && !claimed.has(root.author_id)) {
+          rows.push({
+            user_id: root.author_id,
+            kind: 'reply',
+            actor_id: userId,
+            entity_type: 'message',
+            entity_id: String(message.id),
+          })
+        }
+      }
+
+      if (rows.length === 0) return
+
+      const { error: err } = await supabase.from('notifications').insert(rows)
+      // Surfaced rather than swallowed: the message is sent either way, and a
+      // silently missing notification is the kind of thing nobody reports and
+      // everybody works around. Same shape as the attachment partial failure.
+      if (err) setError('Sent, but could not notify everyone mentioned.')
+    },
+    [userId],
+  )
+
+  /**
    * `threadRootId` is null for a top-level message. Callers must pass the value
    * `threadRootFor()` produced rather than the id of whatever was clicked —
    * that helper is what keeps threads one level deep (SPEC §1.3).
@@ -325,12 +404,17 @@ export function useMessages(channelId: string | undefined) {
         }
       }
 
+      // Notifications are written last, and deliberately not awaited into the
+      // send path's success: the message is already delivered, and a failure
+      // here must not make a sent message look unsent.
+      void notify(message, threadRootId)
+
       // A *successful* row must not be merged into whatever channel is open
       // now — that would render a #general message inside #random.
       if (epochRef.current !== epoch) return
       absorb([message])
     },
-    [channelId, userId, absorb, absorbAttachments],
+    [channelId, userId, absorb, absorbAttachments, notify],
   )
 
   /**
