@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useAuth } from '@/lib/auth-context'
+import {
+  attachmentsByOwner,
+  storagePathFor,
+  validateFile,
+  type Attachment,
+} from '@/lib/attachments'
 import { highestMessageId, mergeMessages, pageQuery } from '@/lib/messages'
 import {
   dropPending,
@@ -18,6 +24,11 @@ import { supabase } from '@/lib/supabase'
  */
 const MESSAGE_COLUMNS =
   'id, channel_id, post_id, author_id, thread_root_id, body, created_at, edited_at, deleted_at'
+
+const ATTACHMENT_COLUMNS =
+  'id, owner_type, owner_id, storage_path, filename, mime, size_bytes, created_at'
+
+const BUCKET = 'attachments'
 
 export interface Message {
   id: number
@@ -49,6 +60,7 @@ export function useMessages(channelId: string | undefined) {
   const userId = session?.user.id ?? null
 
   const [messages, setMessages] = useState<Message[]>([])
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   const [pending, setPending] = useState<PendingMessage[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -68,6 +80,19 @@ export function useMessages(channelId: string | undefined) {
 
   const absorb = useCallback((incoming: Message[]) => {
     setMessages((current) => mergeMessages(current, incoming))
+  }, [])
+
+  /** Dedupe by id — the load query and the subscription overlap by design. */
+  const absorbAttachments = useCallback((incoming: Attachment[]) => {
+    setAttachments((current) => {
+      const byId = new Map(current.map((a) => [a.id, a]))
+      let changed = false
+      for (const a of incoming) {
+        if (!byId.has(a.id)) changed = true
+        byId.set(a.id, a)
+      }
+      return changed ? [...byId.values()] : current
+    })
   }, [])
 
   /**
@@ -100,6 +125,7 @@ export function useMessages(channelId: string | undefined) {
     setLoading(true)
     setError(null)
     setMessages([])
+    setAttachments([])
 
     const q = pageQuery(channelId)
     let query = supabase
@@ -122,8 +148,27 @@ export function useMessages(channelId: string | undefined) {
       // setMessages would drop it, and nothing would fetch it again until the
       // channel was reopened. No reversing needed either — mergeMessages sorts
       // by id, so the newest-first wire order lands correctly regardless.
-      absorb((data ?? []) as Message[])
+      const rows = (data ?? []) as Message[]
+      absorb(rows)
       setLoading(false)
+
+      // Attachments for the page just loaded. A separate query rather than a
+      // PostgREST embed, because owner_id is text and messages.id is bigint —
+      // there is no FK for an embed to follow (SPEC §1.8, DECISIONS #2).
+      if (rows.length > 0) {
+        void supabase
+          .from('attachments')
+          .select(ATTACHMENT_COLUMNS)
+          .eq('owner_type', 'message')
+          .in(
+            'owner_id',
+            rows.map((m) => String(m.id)),
+          )
+          .then(({ data: att }) => {
+            if (!active || !att) return
+            absorbAttachments(att as Attachment[])
+          })
+      }
     })
 
     const channel = supabase
@@ -152,13 +197,29 @@ export function useMessages(channelId: string | undefined) {
           absorb([payload.new as Message])
         },
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'attachments',
+          filter: 'owner_type=eq.message',
+        },
+        (payload) => {
+          if (!active) return
+          // Not filterable by channel — attachments have no channel_id — so
+          // every message attachment in the workspace arrives here and is
+          // filtered on absorb. One event per upload, so the volume is trivial.
+          absorbAttachments([payload.new as Attachment])
+        },
+      )
       .subscribe()
 
     return () => {
       active = false
       void supabase.removeChannel(channel)
     }
-  }, [channelId, absorb])
+  }, [channelId, absorb, absorbAttachments])
 
   /**
    * `threadRootId` is null for a top-level message. Callers must pass the value
@@ -166,9 +227,18 @@ export function useMessages(channelId: string | undefined) {
    * that helper is what keeps threads one level deep (SPEC §1.3).
    */
   const send = useCallback(
-    async (rawBody: string, threadRootId: number | null = null) => {
+    async (rawBody: string, threadRootId: number | null = null, file?: File | null) => {
       const body = rawBody.trim()
-      if (!body || !channelId || !userId) return
+      // A file alone is a valid message; `body text not null` accepts ''.
+      if ((!body && !file) || !channelId || !userId) return
+
+      if (file) {
+        const check = validateFile(file)
+        if (!check.ok) {
+          setError(check.error)
+          return
+        }
+      }
 
       const epoch = epochRef.current
       const entry: PendingMessage = {
@@ -179,8 +249,26 @@ export function useMessages(channelId: string | undefined) {
         threadRootId,
         sinceId: highestMessageId(messagesRef.current),
         status: 'sending',
+        filename: file?.name ?? null,
       }
       setPending((p) => [...p, entry])
+      setError(null)
+
+      // Storage first. A failed upload must not leave a message behind claiming
+      // an attachment that does not exist.
+      let storagePath: string | null = null
+      if (file) {
+        const path = storagePathFor(channelId, file.name, crypto.randomUUID())
+        const { error: upErr } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, file, { contentType: file.type || undefined })
+        if (upErr) {
+          setError(`Could not upload ${file.name}: ${upErr.message}`)
+          setPending((p) => markPending(p, entry.key, 'failed'))
+          return
+        }
+        storagePath = path
+      }
 
       const { data, error: err } = await supabase
         .from('messages')
@@ -197,15 +285,42 @@ export function useMessages(channelId: string | undefined) {
         // Marked regardless of epoch: the entry is tagged with its channel, so
         // the failed bubble and its Retry are waiting when the user returns.
         setPending((p) => markPending(p, entry.key, 'failed'))
+        // Don't let a failed send quietly consume the free tier's 1 GB.
+        if (storagePath) void supabase.storage.from(BUCKET).remove([storagePath])
         return
       }
 
-      // But a *successful* row must not be merged into whatever channel is open
+      const message = data as Message
+
+      if (file && storagePath) {
+        const { data: att, error: attErr } = await supabase
+          .from('attachments')
+          .insert({
+            owner_type: 'message',
+            owner_id: String(message.id),
+            storage_path: storagePath,
+            filename: file.name,
+            mime: file.type || null,
+            size_bytes: file.size,
+          })
+          .select(ATTACHMENT_COLUMNS)
+          .single()
+
+        if (attErr) {
+          // The message is already sent and visible to everyone. Surface the
+          // partial failure rather than pretending the file arrived.
+          setError(`${file.name} was uploaded but could not be attached.`)
+        } else if (epochRef.current === epoch) {
+          absorbAttachments([att as Attachment])
+        }
+      }
+
+      // A *successful* row must not be merged into whatever channel is open
       // now — that would render a #general message inside #random.
       if (epochRef.current !== epoch) return
-      absorb([data as Message])
+      absorb([message])
     },
-    [channelId, userId, absorb],
+    [channelId, userId, absorb, absorbAttachments],
   )
 
   const retry = useCallback(
@@ -227,5 +342,20 @@ export function useMessages(channelId: string | undefined) {
     [pending, channelId],
   )
 
-  return { messages, pending: visiblePending, loading, error, send, retry, discard }
+  // Keyed by message id as text, because attachments.owner_id is text (§2.1).
+  const attachmentsByMessage = useMemo(
+    () => attachmentsByOwner(attachments, 'message'),
+    [attachments],
+  )
+
+  return {
+    messages,
+    attachmentsByMessage,
+    pending: visiblePending,
+    loading,
+    error,
+    send,
+    retry,
+    discard,
+  }
 }

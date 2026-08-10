@@ -24,6 +24,12 @@ export interface PendingMessage {
   /** Null for a top-level message; the thread's root id for a reply. */
   threadRootId: number | null
   /**
+   * Display only — the name of the file being uploaded, so the bubble says
+   * what is in flight. Never part of reconciliation: the confirmed row has no
+   * filename on it, and matching on one would strand the bubble forever.
+   */
+  filename?: string | null
+  /**
    * Highest message id known when this was sent. Only rows *newer* than this
    * can be its confirmation, which is what keeps an identical older message
    * from cancelling it. An id comparison, not a clock — client and server

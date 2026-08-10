@@ -217,3 +217,62 @@ rewrites that value for a message the client sent, the optimistic bubble never
 reconciles and sticks in "sending" forever. Safe today because the client always
 sends `threadRootFor(root)`, which equals what the trigger computes. **The forum
 comment path in P3 must keep that true.**
+
+---
+
+## #9 — 2026-08-10 — The attachments bucket is private, and storage policies are bucket-scoped
+
+**Decision.** The `attachments` bucket is created with `public = false`. Reads go
+through short-lived signed URLs (`createSignedUrls`, 1 hour, batched and cached
+client-side). The 10 MB cap is set as `file_size_limit` on the bucket **and**
+checked in the client before upload. `storage.objects` gets four policies scoped
+to `bucket_id = 'attachments'`, not the single blanket policy every app table has.
+
+**Why private.** Ethan chose this over a public bucket. A public bucket makes
+every uploaded file world-readable forever to anyone holding the link —
+forwarded, leaked, or indexed. Paths are unguessable uuids, but that is
+obscurity, not access control, and Non-negotiable 2's "auth is the only wall"
+should cover files as well as rows. A team pasting screenshots of internal work
+into chat should not be creating public URLs by doing so.
+
+**What it costs.** A signed URL per object, which is the one piece of real
+complexity this adds. `createSignedUrls` takes a batch, so it is one request per
+page of messages rather than one per image, cached by path with its expiry and
+re-signed only when stale. Contained to `src/lib/useSignedUrls.ts`.
+`getPublicUrl()` must never be used on this bucket — it returns a URL that 400s.
+
+**Why the cap is enforced twice.** The bucket limit is the wall: a client check
+alone means anything bypassing the UI can fill the free tier's 1 GB. The client
+check exists only so the user gets an instant, readable error instead of
+uploading 40 MB and then being refused. `MAX_UPLOAD_BYTES` in
+`src/lib/attachments.ts` and `file_size_limit` in the migration are the same
+number, and a test asserts the client half against the literal 10485760 so the
+two cannot drift silently.
+
+**Why storage.objects does not follow Non-negotiable 2's shape.** That rule says
+one blanket policy per table. `storage.objects` is a single table holding the
+contents of *every* bucket, so an unscoped `using (true)` there would also
+govern every bucket added in a later phase — the opposite of a deliberate
+decision. The four policies are scoped by `bucket_id` and otherwise say exactly
+what Non-negotiable 2 says: any authenticated teammate, full access, no per-row
+ownership. This is the rule's intent applied to a table it did not anticipate,
+not an exception to it.
+
+**Bucket creation is idempotent by `do update`, not `do nothing`.** The
+dashboard's "New bucket" button defaults to public. Had this been `do nothing`, a
+pre-existing bucket of the same name would have left every file world-readable
+while the migration reported success.
+
+**Consequences.**
+- `attachments` is the second table bound by DECISIONS #4's constraint: a later
+  migration adding a client-visible column must re-declare the publication's
+  column list. #7 notes that constraint is itself untested.
+- Deleting a message leaves its attachment rows and storage objects orphaned —
+  no FK, by design (SPEC §1.8). The bytes still count against the 1 GB. A sweep
+  belongs in P6 or the backlog, not here.
+- Resumable/TUS uploads would need policies on `storage.s3_multipart_uploads`
+  and `..._parts`. The 10 MB cap keeps the standard upload path viable; do not
+  switch without a follow-up migration.
+- `isImage()` accepts `image/svg+xml`, and an SVG opened from a signed URL
+  executes script on the storage origin. No session material lives there, so the
+  impact is low; noted so it is a known risk rather than an oversight.

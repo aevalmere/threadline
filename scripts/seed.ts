@@ -204,6 +204,134 @@ async function threadFlatteningCheck(channelId: string, authorId: string) {
   )
 }
 
+interface ProbeResult {
+  verb: string
+  ok: boolean
+  detail: string
+}
+
+/**
+ * The blanket policy on `attachments` (DECISIONS #9), judged on rows affected
+ * rather than error presence — same reasoning as DECISIONS #5. Until now the
+ * probe covered `channels` only, and #5 flagged that gap as worth closing "when
+ * the table count grows". Adding a table plus a whole new storage policy
+ * surface is that moment.
+ */
+async function attachmentsCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
+  const out: ProbeResult[] = []
+
+  const ins = await anon
+    .from('attachments')
+    .insert({
+      owner_type: 'message',
+      owner_id: '__probe',
+      storage_path: '__probe/none',
+      filename: 'probe.txt',
+      mime: 'text/plain',
+      size_bytes: 1,
+    })
+    .select('id')
+    .single<{ id: string }>()
+  out.push({
+    verb: 'att insert',
+    ok: !ins.error && !!ins.data,
+    detail: ins.error?.message ?? '1 row created',
+  })
+
+  if (!ins.data) {
+    out.push({ verb: 'att delete', ok: false, detail: 'skipped — insert failed' })
+    return out
+  }
+
+  const sel = await anon.from('attachments').select('id').eq('id', ins.data.id)
+  out.push({
+    verb: 'att select',
+    ok: !sel.error && (sel.data?.length ?? 0) === 1,
+    detail: sel.error ? sel.error.message : `${sel.data?.length ?? 0} rows visible`,
+  })
+
+  const del = await anon.from('attachments').delete().eq('id', ins.data.id).select('id')
+  out.push({
+    verb: 'att delete',
+    ok: !del.error && (del.data?.length ?? 0) === 1,
+    detail: del.error
+      ? del.error.message
+      : `${del.data?.length ?? 0} rows deleted${
+          (del.data?.length ?? 0) === 0 ? ' — silently blocked by RLS' : ''
+        }`,
+  })
+
+  return out
+}
+
+/**
+ * The storage round trip (DECISIONS #9). This is the only thing that tells us
+ * the four bucket-scoped `storage.objects` policies actually work — and it has
+ * to be judged on *content*, because a denied storage read comes back as an
+ * empty list rather than an error, exactly like a denied SELECT.
+ *
+ * It also proves the bucket is private, which is the whole reason for the
+ * signed-URL machinery.
+ */
+async function storageCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
+  const out: ProbeResult[] = []
+  const path = `__probe/${crypto.randomUUID()}.txt`
+  const body = `probe ${crypto.randomUUID()}`
+
+  const up = await anon.storage
+    .from('attachments')
+    .upload(path, new Blob([body], { type: 'text/plain' }))
+  out.push({
+    verb: 'file upload',
+    ok: !up.error && !!up.data?.path,
+    detail: up.error?.message ?? `stored at ${up.data?.path}`,
+  })
+  if (up.error) {
+    for (const verb of ['signed read', 'private', 'file delete']) {
+      out.push({ verb, ok: false, detail: 'skipped — upload failed' })
+    }
+    return out
+  }
+
+  // A signed URL must return exactly what went in.
+  const signed = await anon.storage.from('attachments').createSignedUrl(path, 60)
+  let readBack = ''
+  if (signed.data?.signedUrl) {
+    const r = await fetch(signed.data.signedUrl)
+    readBack = r.ok ? await r.text() : `HTTP ${r.status}`
+  }
+  out.push({
+    verb: 'signed read',
+    ok: readBack === body,
+    detail: readBack === body ? 'signed URL returned the file' : `got ${JSON.stringify(readBack)}`,
+  })
+
+  // …and the unsigned public path must not. This is the assertion that would
+  // catch the bucket having been created (or reverted) as public.
+  const publicRes = await fetch(`${URL}/storage/v1/object/public/attachments/${path}`)
+  out.push({
+    verb: 'private',
+    ok: !publicRes.ok,
+    detail: publicRes.ok
+      ? 'PUBLIC URL SERVED THE FILE — the bucket is not private'
+      : `unsigned URL refused (HTTP ${publicRes.status})`,
+  })
+
+  const rm = await anon.storage.from('attachments').remove([path])
+  const removed = (rm.data?.length ?? 0) === 1
+  out.push({
+    verb: 'file delete',
+    ok: !rm.error && removed,
+    detail: rm.error
+      ? rm.error.message
+      : removed
+        ? 'probe object gone'
+        : '0 objects removed — silently blocked',
+  })
+
+  return out
+}
+
 /**
  * Non-negotiable 2's verification. Mints a real session for `email` without a
  * password (DECISIONS #3), then runs all four verbs through the anon client.
@@ -328,6 +456,8 @@ async function rlsCheck(email: string) {
     }
   }
 
+  results.push(...(await attachmentsCheck(anon)))
+  results.push(...(await storageCheck(anon)))
   results.push(...(await deniedWithoutSession()))
 
   for (const r of results) {
@@ -387,6 +517,26 @@ async function deniedWithoutSession() {
   // Clean up in case the insert was wrongly allowed, so the failure is
   // reported without also poisoning the next run.
   if (created > 0) await admin.from('channels').delete().eq('name', `${RLS_PROBE}_anon`)
+
+  // Storage has its own policy surface (DECISIONS #9), so it needs its own
+  // signed-out probe: the four bucket-scoped policies are `to authenticated`,
+  // and nothing else would notice if one were written `to public`.
+  const path = `__probe/anon-${crypto.randomUUID()}.txt`
+  const up = await anon.storage
+    .from('attachments')
+    .upload(path, new Blob(['nope'], { type: 'text/plain' }))
+  const uploaded = !up.error && !!up.data?.path
+  out.push({
+    verb: 'anon upload',
+    ok: !uploaded,
+    detail: uploaded ? 'file stored without a session' : 'denied',
+  })
+  if (uploaded) {
+    const admin_ = createClient(URL!, SERVICE!, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+    await admin_.storage.from('attachments').remove([path])
+  }
 
   return out
 }

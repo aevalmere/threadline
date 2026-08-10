@@ -8,14 +8,18 @@ import {
 } from 'react'
 import { useParams } from 'react-router-dom'
 
+import { PaperclipIcon } from 'lucide-react'
+
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatBytes, isImage, type Attachment } from '@/lib/attachments'
 import { useChannels } from '@/lib/channels-context'
 import { groupMessages } from '@/lib/grouping'
 import { useProfiles } from '@/lib/profiles-context'
 import { splitThreads, threadRootFor } from '@/lib/threads'
 import { useMessages, type Message } from '@/lib/useMessages'
+import { useSignedUrls } from '@/lib/useSignedUrls'
 import type { PendingMessage } from '@/lib/pending'
 import { cn } from '@/lib/utils'
 
@@ -26,10 +30,25 @@ export default function ChannelView() {
   const { channelId } = useParams<{ channelId: string }>()
   const { channels, loading: channelsLoading } = useChannels()
   const { nameFor, byId } = useProfiles()
-  const { messages, pending, loading, error, send, retry, discard } = useMessages(channelId)
+  const {
+    messages,
+    attachmentsByMessage,
+    pending,
+    loading,
+    error,
+    send,
+    retry,
+    discard,
+  } = useMessages(channelId)
 
   const listRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
+  const [dragging, setDragging] = useState(false)
+
+  // Every attachment path on screen, signed in one batched request.
+  const signedUrlFor = useSignedUrls(
+    [...attachmentsByMessage.values()].flat().map((a) => a.storage_path),
+  )
 
   const onScroll = useCallback(() => {
     const el = listRef.current
@@ -79,7 +98,30 @@ export default function ChannelView() {
         )}
       </div>
 
-      <div ref={listRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        ref={listRef}
+        onScroll={onScroll}
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragging(true)
+        }}
+        onDragLeave={(e) => {
+          // Only when the pointer actually leaves the list, not on every child.
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+            setDragging(false)
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragging(false)
+          const file = e.dataTransfer.files?.[0]
+          if (file) void send('', null, file)
+        }}
+        className={cn(
+          'min-h-0 flex-1 overflow-y-auto rounded-md',
+          dragging && 'ring-primary bg-primary/5 ring-2',
+        )}
+      >
         {error && (
           <p role="alert" className="text-destructive text-sm">
             Could not load messages: {error}
@@ -104,11 +146,15 @@ export default function ChannelView() {
                 authorName={nameFor(group.authorId)}
                 avatarUrl={byId.get(group.authorId)?.avatar_url ?? null}
                 messages={group.messages}
+                attachmentsFor={(id) => attachmentsByMessage.get(String(id)) ?? []}
+                signedUrlFor={signedUrlFor}
                 renderThread={(message) => (
                   <Thread
                     root={message}
                     replies={split.repliesByRoot.get(message.id) ?? []}
                     pending={pending.filter((p) => p.threadRootId === message.id)}
+                    attachmentsFor={(id) => attachmentsByMessage.get(String(id)) ?? []}
+                    signedUrlFor={signedUrlFor}
                     onSend={send}
                     onRetry={retry}
                     onDiscard={discard}
@@ -139,7 +185,7 @@ export default function ChannelView() {
       <Composer
         key={channelId}
         channelName={channel?.name}
-        onSend={send}
+        onSend={(body, file) => send(body, null, file)}
         disabled={loading}
       />
     </div>
@@ -150,11 +196,15 @@ function MessageGroupRow({
   authorName,
   avatarUrl,
   messages,
+  attachmentsFor,
+  signedUrlFor,
   renderThread,
 }: {
   authorName: string
   avatarUrl: string | null
   messages: Message[]
+  attachmentsFor: (messageId: number) => Attachment[]
+  signedUrlFor: (path: string) => string | null
   renderThread: (message: Message) => ReactNode
 }) {
   const first = messages[0]
@@ -169,11 +219,59 @@ function MessageGroupRow({
         {messages.map((m) => (
           <div key={m.id}>
             <MessageBody message={m} />
+            {!m.deleted_at &&
+              attachmentsFor(m.id).map((a) => (
+                <AttachmentView key={a.id} attachment={a} url={signedUrlFor(a.storage_path)} />
+              ))}
             {renderThread(m)}
           </div>
         ))}
       </div>
     </div>
+  )
+}
+
+/** Images inline, everything else a chip. The URL is null until it is signed. */
+function AttachmentView({
+  attachment,
+  url,
+}: {
+  attachment: Attachment
+  url: string | null
+}) {
+  if (!url) {
+    return <Skeleton className="my-1 h-32 w-48 rounded-md" />
+  }
+
+  if (isImage(attachment.mime)) {
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="my-1 block w-fit">
+        <img
+          src={url}
+          alt={attachment.filename}
+          loading="lazy"
+          className="max-h-64 rounded-md border object-contain"
+        />
+      </a>
+    )
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      download={attachment.filename}
+      className="hover:bg-accent my-1 flex w-fit items-center gap-2 rounded-md border px-2.5 py-1.5"
+    >
+      <PaperclipIcon className="text-muted-foreground size-4 shrink-0" />
+      <span className="text-sm">{attachment.filename}</span>
+      {attachment.size_bytes !== null && (
+        <span className="text-muted-foreground text-xs">
+          {formatBytes(attachment.size_bytes)}
+        </span>
+      )}
+    </a>
   )
 }
 
@@ -185,6 +283,8 @@ function Thread({
   root,
   replies,
   pending,
+  attachmentsFor,
+  signedUrlFor,
   onSend,
   onRetry,
   onDiscard,
@@ -192,7 +292,9 @@ function Thread({
   root: Message
   replies: Message[]
   pending: PendingMessage[]
-  onSend: (body: string, threadRootId: number | null) => Promise<void>
+  attachmentsFor: (messageId: number) => Attachment[]
+  signedUrlFor: (path: string) => string | null
+  onSend: (body: string, threadRootId: number | null, file?: File | null) => Promise<void>
   onRetry: (key: string) => Promise<void>
   onDiscard: (key: string) => void
 }) {
@@ -232,6 +334,8 @@ function Thread({
           authorName={nameFor(group.authorId)}
           avatarUrl={byId.get(group.authorId)?.avatar_url ?? null}
           messages={group.messages}
+          attachmentsFor={attachmentsFor}
+          signedUrlFor={signedUrlFor}
           // One level deep (SPEC §1.3) — a reply has no thread of its own.
           renderThread={() => null}
         />
@@ -252,7 +356,7 @@ function Thread({
         channelName={undefined}
         placeholder="Reply…"
         disabled={false}
-        onSend={(body) => onSend(body, threadRootFor(root))}
+        onSend={(body, file) => onSend(body, threadRootFor(root), file)}
       />
 
       <button
@@ -307,6 +411,13 @@ function PendingRow({
         >
           {pending.body}
         </p>
+        {pending.filename && (
+          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            <PaperclipIcon className="size-3.5 shrink-0" />
+            {pending.filename}
+            {!failed && ' — uploading…'}
+          </p>
+        )}
         {failed && (
           <p className="mt-1 flex items-center gap-2">
             <span className="text-destructive text-xs">Not sent.</span>
@@ -339,16 +450,25 @@ function Composer({
   placeholder,
 }: {
   channelName: string | undefined
-  onSend: (body: string) => Promise<void>
+  onSend: (body: string, file?: File | null) => Promise<void>
   disabled: boolean
   placeholder?: string
 }) {
   const [value, setValue] = useState('')
+  const fileInput = useRef<HTMLInputElement>(null)
 
   function submit() {
     if (disabled || !value.trim()) return
     void onSend(value)
     setValue('')
+  }
+
+  function attach(file: File | undefined) {
+    if (!file || disabled) return
+    // The typed text rides along with the file as one message.
+    void onSend(value, file)
+    setValue('')
+    if (fileInput.current) fileInput.current.value = ''
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -360,15 +480,33 @@ function Composer({
 
   return (
     <div className="shrink-0 pt-3">
-      <textarea
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={onKeyDown}
-        rows={2}
-        disabled={disabled}
-        placeholder={placeholder ?? (channelName ? `Message #${channelName}` : 'Message')}
-        className="border-input placeholder:text-muted-foreground focus-visible:ring-ring/50 field-sizing-content max-h-40 min-h-16 w-full resize-none rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] disabled:opacity-60"
-      />
+      <div className="flex items-end gap-2">
+        <textarea
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={onKeyDown}
+          rows={2}
+          disabled={disabled}
+          placeholder={placeholder ?? (channelName ? `Message #${channelName}` : 'Message')}
+          className="border-input placeholder:text-muted-foreground focus-visible:ring-ring/50 field-sizing-content max-h-40 min-h-16 w-full resize-none rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px] disabled:opacity-60"
+        />
+        <input
+          ref={fileInput}
+          type="file"
+          className="hidden"
+          onChange={(e) => attach(e.target.files?.[0])}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={disabled}
+          onClick={() => fileInput.current?.click()}
+        >
+          <PaperclipIcon />
+          <span className="sr-only">Attach a file</span>
+        </Button>
+      </div>
     </div>
   )
 }

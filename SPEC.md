@@ -195,9 +195,11 @@ P3 also adds the deferred `messages.post_id` FK.
 Index on `(status, position)`.
 
 #### `attachments` — P1
-`id uuid pk`, `owner_type text check in ('message','post','page','task')`, `owner_id text` (§2.1), `storage_path text not null`, `filename text not null`, `mime text`, `size_bytes int`. Index on `(owner_type, owner_id)`.
+`id uuid pk`, `owner_type text check in ('message','post','page','task')`, `owner_id text` (§2.1), `storage_path text not null`, `filename text not null`, `mime text`, `size_bytes int`, `created_at timestamptz not null default now()`. Index on `(owner_type, owner_id)`.
 
 Storage bucket `attachments`, **10 MB cap**, images render as inline thumbnails.
+
+The bucket is **private**. Reads go through short-lived signed URLs, so an uploaded file is unreadable without a session — "auth is the only wall" (§1.1) covers files too. The 10 MB cap is set on the bucket *and* checked client-side: the bucket is the real wall, the client check just avoids a wasted upload. `storage.objects` carries four bucket-scoped policies rather than §2.2's single blanket policy, because it is one table holding every bucket. See DECISIONS #9.
 
 #### `links` — P2
 `id uuid pk`, `source_type text`, `source_id text`, `target_type text`, `target_id text`, `kind text`, `created_at timestamptz default now()`.
