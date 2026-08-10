@@ -85,19 +85,6 @@ async function ensureChannel(
   return data!.id
 }
 
-const CHATTER = [
-  'morning all',
-  'pushed the migration, take a look when you get a sec',
-  'the staging deploy is green',
-  'anyone else seeing the flaky test on CI?',
-  'nope, passed for me twice in a row',
-  'ok merging then',
-  'quick one: are we still doing the sync at 3?',
-  'yep, calendar invite went out yesterday',
-  'nice, thanks',
-  'that reminds me — we should write this down somewhere',
-]
-
 async function main() {
   console.log('Seeding…\n')
 
@@ -135,73 +122,20 @@ async function main() {
   die('add channel members', memberErr)
   console.log('✓ channels     #general, #random (both users in both)')
 
-  // 3. Fifty messages, alternating authors, plus one real thread so P1 has
-  //    something with depth to render.
+  // 3. No message seeding. The original 50 filler messages were deleted from
+  //    production on 2026-08-10 at Ethan's request once the channel had real
+  //    traffic, and the script no longer recreates them — a seed that writes
+  //    chat into a channel people actually use is a liability, not a
+  //    convenience. Users, channels and membership are still seeded, because
+  //    those are structure rather than content.
   //
-  //    Idempotent via a count guard, and the threshold is `>= 50`, not `== 50`,
-  //    for a reason that cost real messages to learn: once people start using
-  //    the app, "more than 50" is the *normal* state, not a broken one. An
-  //    equality check sent a channel holding 50 seeded messages plus 22 real
-  //    ones down the wipe branch. Only a count *below* 50 means a run died
-  //    between the bulk insert and the thread insert, and only that is worth
-  //    clearing rather than stacking another 47 on top.
-  //
-  //    Note the consequence: a complete seed is never re-authored. Changing
-  //    SEED_USER_A/B_EMAIL and rerunning leaves the existing messages owned by
-  //    the old users. To re-author, delete the messages (or the old users,
-  //    which cascades) first.
+  //    G1's pagination check needs volume; generate it by hand when that item
+  //    lands rather than by carrying permanent filler here.
   const { count: existing } = await admin
     .from('messages')
     .select('id', { count: 'exact', head: true })
     .eq('channel_id', general)
-
-  if ((existing ?? 0) >= 50) {
-    console.log(`✓ messages     ${existing} already present, leaving them alone`)
-  } else {
-    if ((existing ?? 0) > 0) {
-      const { error: wipeErr } = await admin
-        .from('messages')
-        .delete()
-        .eq('channel_id', general)
-      die('clear partial message seed', wipeErr)
-      console.log(`  cleared ${existing} messages from an incomplete earlier run`)
-    }
-
-    const rows = Array.from({ length: 47 }, (_, i) => ({
-      channel_id: general,
-      author_id: i % 2 === 0 ? userA : userB,
-      body: `${CHATTER[i % CHATTER.length]} (${i + 1})`,
-    }))
-    const { data: inserted, error: msgErr } = await admin
-      .from('messages')
-      .insert(rows)
-      .select('id')
-    die('insert messages', msgErr)
-
-    const rootId = (inserted as { id: number }[])[10].id
-    const { error: threadErr } = await admin.from('messages').insert([
-      {
-        channel_id: general,
-        author_id: userB,
-        thread_root_id: rootId,
-        body: 'replying in a thread so P1 has one to render',
-      },
-      {
-        channel_id: general,
-        author_id: userA,
-        thread_root_id: rootId,
-        body: 'and a second reply',
-      },
-      {
-        channel_id: general,
-        author_id: userB,
-        thread_root_id: rootId,
-        body: 'third — threads are one level deep by design',
-      },
-    ])
-    die('insert thread replies', threadErr)
-    console.log('✓ messages     50 in #general, including a 3-reply thread')
-  }
+  console.log(`✓ messages     ${existing ?? 0} in #general, none seeded`)
 
   await threadFlatteningCheck(general, userA)
   await rlsCheck(EMAIL_A)
@@ -216,50 +150,57 @@ async function main() {
  * it to the root.
  */
 async function threadFlatteningCheck(channelId: string, authorId: string) {
-  const { data: replies, error: findErr } = await admin
-    .from('messages')
-    .select('id, thread_root_id')
-    .eq('channel_id', channelId)
-    .not('thread_root_id', 'is', null)
-    .order('id')
-    .limit(1)
-  die('find a seeded reply', findErr)
-
-  const reply = replies?.[0]
-  if (!reply) {
-    console.error('✗ thread check: no reply to test against — was the seed wiped?')
-    process.exit(1)
+  // Builds its own root and reply rather than hunting for a seeded one, so the
+  // check works against an empty channel and leaves nothing behind either way.
+  const probe = async (body: string, threadRootId: number | null) => {
+    const { data, error } = await admin
+      .from('messages')
+      .insert({
+        channel_id: channelId,
+        author_id: authorId,
+        thread_root_id: threadRootId,
+        body,
+      })
+      .select('id, thread_root_id')
+      .single()
+    die(`insert ${body}`, error)
+    return data as { id: number; thread_root_id: number | null }
   }
 
-  const { data: nested, error: insErr } = await admin
-    .from('messages')
-    .insert({
-      channel_id: channelId,
-      author_id: authorId,
-      // Deliberately wrong: target a reply, not a root.
-      thread_root_id: reply.id,
-      body: '__thread_flatten_probe',
-    })
-    .select('id, thread_root_id')
-    .single()
-  die('insert nested probe reply', insErr)
+  const root = await probe('__probe_root', null)
+  const reply = await probe('__probe_reply', root.id)
+  // Deliberately wrong: target the reply, not the root. This is what a buggy
+  // client would send, and what the trigger exists to correct.
+  const nested = await probe('__probe_nested', reply.id)
 
-  const flattened = nested!.thread_root_id === reply.thread_root_id
+  // Delete before asserting, so a failure still leaves the channel clean.
+  // Replies first: removing the root cascades, but being explicit keeps this
+  // honest if the FK ever changes.
+  for (const id of [nested.id, reply.id, root.id]) {
+    const { error } = await admin.from('messages').delete().eq('id', id)
+    die(`remove probe message ${id}`, error)
+  }
 
-  const { error: cleanErr } = await admin.from('messages').delete().eq('id', nested!.id)
-  die('remove nested probe reply', cleanErr)
-
-  if (!flattened) {
+  if (reply.thread_root_id !== root.id) {
     console.error(
-      `✗ thread flattening: replied to ${reply.id}, expected root ` +
-        `${reply.thread_root_id}, got ${nested!.thread_root_id}. Is the ` +
-        'flatten_thread_root trigger applied?',
+      `✗ thread check: a reply to root ${root.id} came back on ` +
+        `${reply.thread_root_id}. The trigger is rewriting what it should leave alone.`,
     )
     process.exit(1)
   }
+
+  if (nested.thread_root_id !== root.id) {
+    console.error(
+      `✗ thread flattening: replied to reply ${reply.id}, expected root ` +
+        `${root.id}, got ${nested.thread_root_id}. Is the flatten_thread_root ` +
+        'trigger applied? (npx supabase db push)',
+    )
+    process.exit(1)
+  }
+
   console.log(
     `✓ threads      one level deep — a reply to reply ${reply.id} was ` +
-      `rewritten to root ${reply.thread_root_id}`,
+      `rewritten to root ${root.id}`,
   )
 }
 
