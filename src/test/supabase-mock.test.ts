@@ -1,0 +1,238 @@
+/**
+ * The mock backend is hand-written infrastructure, so it gets a test — not for
+ * coverage, but because a mock that quietly misbehaves sends you hunting for a
+ * bug in the app that is really a bug in the harness.
+ *
+ * Scoped to the behaviours the app actually depends on. It is not a
+ * conformance suite for PostgREST.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// Browser APIs the mock reaches for, stubbed before it is imported.
+const store = new Map<string, string>()
+vi.stubGlobal('localStorage', {
+  getItem: (k: string) => store.get(k) ?? null,
+  setItem: (k: string, v: string) => void store.set(k, v),
+  removeItem: (k: string) => void store.delete(k),
+})
+vi.stubGlobal('location', { reload: () => {} })
+
+const { mockSupabase } = await import('@/lib/supabase-mock')
+
+const CHANNEL = '10000000-0000-4000-8000-000000000001'
+
+async function messageCount() {
+  const { data } = await mockSupabase.from('messages').select('*')
+  return (data as unknown[]).length
+}
+
+describe('mock query builder', () => {
+  beforeEach(async () => {
+    const { data } = await mockSupabase.from('messages').select('*')
+    for (const m of data as { id: number }[]) {
+      await mockSupabase.from('messages').delete().eq('id', m.id)
+    }
+  })
+
+  it('seeds the two channels the app expects', async () => {
+    const { data } = await mockSupabase.from('channels').select('*')
+    expect((data as { name: string }[]).map((c) => c.name).sort()).toEqual([
+      'general',
+      'random',
+    ])
+  })
+
+  it('inserts and returns the created row', async () => {
+    const { data, error } = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, author_id: 'u1', body: 'hello' })
+      .select('*')
+      .single()
+    expect(error).toBeNull()
+    expect((data as { body: string }).body).toBe('hello')
+    expect((data as { id: number }).id).toBeGreaterThan(0)
+  })
+
+  it('gives messages ascending bigint ids, like the real identity column', async () => {
+    const a = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, author_id: 'u1', body: 'one' })
+      .select('*')
+      .single()
+    const b = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, author_id: 'u1', body: 'two' })
+      .select('*')
+      .single()
+    expect((b.data as { id: number }).id).toBeGreaterThan((a.data as { id: number }).id)
+  })
+
+  it('filters with eq, orders descending and limits — the first-page query', async () => {
+    for (const body of ['a', 'b', 'c']) {
+      await mockSupabase
+        .from('messages')
+        .insert({ channel_id: CHANNEL, author_id: 'u1', body })
+    }
+    await mockSupabase
+      .from('messages')
+      .insert({ channel_id: 'other', author_id: 'u1', body: 'elsewhere' })
+
+    const { data } = await mockSupabase
+      .from('messages')
+      .select('*')
+      .eq('channel_id', CHANNEL)
+      .order('id', { ascending: false })
+      .limit(2)
+
+    const rows = data as { body: string }[]
+    expect(rows).toHaveLength(2)
+    expect(rows.map((r) => r.body)).toEqual(['c', 'b'])
+  })
+
+  it('supports in() for the attachment lookup', async () => {
+    const one = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, author_id: 'u1', body: 'x' })
+      .select('*')
+      .single()
+    const id = (one.data as { id: number }).id
+    const { data } = await mockSupabase
+      .from('messages')
+      .select('*')
+      .in('id', [id, 999])
+    expect(data as unknown[]).toHaveLength(1)
+  })
+
+  it('updates matching rows', async () => {
+    const ins = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, author_id: 'u1', body: 'before' })
+      .select('*')
+      .single()
+    const id = (ins.data as { id: number }).id
+
+    await mockSupabase.from('messages').update({ body: '', deleted_at: 'now' }).eq('id', id)
+
+    const { data } = await mockSupabase.from('messages').select('*').eq('id', id).single()
+    expect((data as { body: string }).body).toBe('')
+    expect((data as { deleted_at: string }).deleted_at).toBe('now')
+  })
+
+  it('deletes matching rows', async () => {
+    const ins = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, author_id: 'u1', body: 'doomed' })
+      .select('*')
+      .single()
+    await mockSupabase
+      .from('messages')
+      .delete()
+      .eq('id', (ins.data as { id: number }).id)
+    expect(await messageCount()).toBe(0)
+  })
+
+  it('maybeSingle returns null rather than erroring when nothing matches', async () => {
+    const { data, error } = await mockSupabase
+      .from('profiles')
+      .select('*')
+      .eq('display_name', 'Nobody')
+      .maybeSingle()
+    expect(data).toBeNull()
+    expect(error).toBeNull()
+  })
+
+  it('rejects a duplicate channel with 23505, like the unique index', async () => {
+    const { error } = await mockSupabase
+      .from('channels')
+      .insert({ name: 'general', kind: 'chat' })
+      .select('*')
+      .single()
+    expect(error?.code).toBe('23505')
+  })
+
+  it('keeps threads one level deep, like the flatten_thread_root trigger', async () => {
+    const root = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, author_id: 'u1', body: 'root' })
+      .select('*')
+      .single()
+    const rootId = (root.data as { id: number }).id
+
+    const reply = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, author_id: 'u1', body: 'reply', thread_root_id: rootId })
+      .select('*')
+      .single()
+    const replyId = (reply.data as { id: number }).id
+
+    // Reply to the reply — must attach to the root instead.
+    const nested = await mockSupabase
+      .from('messages')
+      .insert({
+        channel_id: CHANNEL,
+        author_id: 'u1',
+        body: 'nested',
+        thread_root_id: replyId,
+      })
+      .select('*')
+      .single()
+
+    expect((nested.data as { thread_root_id: number }).thread_root_id).toBe(rootId)
+  })
+})
+
+describe('mock realtime', () => {
+  it('delivers an insert to a matching channel subscription', async () => {
+    const seen: unknown[] = []
+    const ch = mockSupabase
+      .channel('t')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+          filter: `channel_id=eq.${CHANNEL}`,
+        },
+        (p) => seen.push(p),
+      )
+      .subscribe()
+
+    await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, author_id: 'u1', body: 'live' })
+
+    expect(seen).toHaveLength(1)
+
+    // …and not after removeChannel, which is what stops the leak the real
+    // client would otherwise accumulate per channel visit.
+    await mockSupabase.removeChannel(ch)
+    await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, author_id: 'u1', body: 'after' })
+    expect(seen).toHaveLength(1)
+  })
+
+  it('does not deliver another channel’s messages', async () => {
+    const seen: unknown[] = []
+    const ch = mockSupabase
+      .channel('t2')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+          filter: `channel_id=eq.${CHANNEL}`,
+        },
+        (p) => seen.push(p),
+      )
+      .subscribe()
+
+    await mockSupabase
+      .from('messages')
+      .insert({ channel_id: 'somewhere-else', author_id: 'u1', body: 'nope' })
+    expect(seen).toHaveLength(0)
+    await mockSupabase.removeChannel(ch)
+  })
+})

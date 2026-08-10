@@ -370,3 +370,51 @@ hides attachments on a tombstone. Parked in BACKLOG rather than fixed here: it
 needs a DELETE subscription whose payload, under the default replica identity,
 carries only the primary key — so it wants the same thought as #4's column-list
 question rather than a quick patch.
+
+---
+
+## #12 — 2026-08-10 — An in-memory mock backend for offline development
+
+**Decision.** `VITE_MOCK_BACKEND=true` swaps the Supabase client for
+`src/lib/supabase-mock.ts`, an in-memory implementation of the client surface.
+No network, no Docker, no cloud project. Rows persist in localStorage; uploaded
+blobs live in memory and are gone on reload.
+
+**Why, and what was rejected.** Ethan wanted to test functionality locally
+without a backend. The alternative offered was `npx supabase start` — the real
+stack in Docker, full fidelity, one codebase, and Docker is already installed on
+this machine. He chose the mock for speed and to avoid running Docker at all.
+That is a legitimate call for UI iteration; it is recorded here because it comes
+with a cost the alternative does not have.
+
+**The cost, stated plainly.** This is a second implementation of the data layer,
+and it *will* drift. Specifically it cannot tell you anything about:
+
+| Not tested by the mock | Where it is actually tested |
+|---|---|
+| RLS — there are no policies; everything is permitted | `npm run seed`'s 15 assertions |
+| Realtime — events are emitted synchronously in one tab | G1's two-browser check |
+| Constraints, triggers, cascades | the migrations, and the seed's thread probe |
+| Signed URLs and bucket privacy | the seed's `private` assertion |
+
+**So a green mock run never means a feature ships.** It means the wiring above
+the client boundary is sound.
+
+**Why it mocks at the client boundary.** Faking `supabase` itself leaves every
+component, hook and query above it untouched, so there is exactly one
+implementation of the product and the mock is a harness rather than a fork. The
+cast in `src/lib/supabase.ts` is a deliberate lie confined to one line: the mock
+implements the subset of the client enumerated from the real call sites, so
+anything new the app calls fails loudly in mock mode rather than silently
+misbehaving.
+
+**Two behaviours are reproduced on purpose**, because their absence would let
+the mock fake a state the database forbids: the unique `(name, kind)` channel
+index returns a `23505`, and thread targets are flattened to their root the way
+`flatten_thread_root` does (DECISIONS #8). `src/test/supabase-mock.test.ts`
+covers both, plus the query builder and subscription scoping — the mock is
+hand-written infrastructure, and a mock that quietly misbehaves sends you
+hunting for an app bug that is really a harness bug.
+
+**Remove it if it starts costing more than it saves.** The moment someone
+debugs a difference between mock and real, `supabase start` is the better tool.
