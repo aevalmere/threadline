@@ -17,7 +17,7 @@ function navClass({ isActive }: { isActive: boolean }) {
 }
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const { profile, signOut, isGuest } = useAuth()
+  const { profile, signOut } = useAuth()
   const { chat, forum, loading, error } = useChannels()
 
   return (
@@ -91,25 +91,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         )}
       </nav>
 
-      {isGuest && (
-        <p className="bg-destructive/10 text-destructive border-destructive/30 mx-3 mb-2 rounded-md border px-2 py-1.5 text-xs">
-          Guest mode — this workspace is open to anyone with the link.
-        </p>
-      )}
-
       <div className="border-sidebar-border flex items-center justify-between gap-2 border-t px-3 py-3">
-        <span className="truncate text-sm">
-          {isGuest ? 'Guest' : (profile?.display_name ?? '…')}
-        </span>
-        {isGuest ? (
-          <Button variant="ghost" size="sm" asChild>
-            <NavLink to="/login">Sign in</NavLink>
-          </Button>
-        ) : (
-          <Button variant="ghost" size="sm" onClick={() => void signOut()}>
-            Sign out
-          </Button>
-        )}
+        <span className="truncate text-sm">{profile?.display_name ?? '…'}</span>
+        <Button variant="ghost" size="sm" onClick={() => void signOut()}>
+          Sign out
+        </Button>
       </div>
     </div>
   )

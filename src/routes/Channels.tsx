@@ -18,12 +18,12 @@ import type { Channel } from '@/lib/supabase'
 
 type DialogState =
   | { mode: 'create' }
-  | { mode: 'rename'; channel: Channel }
+  | { mode: 'edit'; channel: Channel }
   | { mode: 'delete'; channel: Channel }
   | null
 
 export default function Channels() {
-  const { chat, forum, loading, error, createChannel, renameChannel, deleteChannel } =
+  const { chat, forum, loading, error, createChannel, updateChannel, deleteChannel } =
     useChannels()
   const [dialog, setDialog] = useState<DialogState>(null)
 
@@ -53,14 +53,14 @@ export default function Channels() {
             heading="Chat"
             channels={chat}
             empty="No chat channels yet."
-            onRename={(channel) => setDialog({ mode: 'rename', channel })}
+            onEdit={(channel) => setDialog({ mode: 'edit', channel })}
             onDelete={(channel) => setDialog({ mode: 'delete', channel })}
           />
           <ChannelGroup
             heading="Forums"
             channels={forum}
             empty="No forums yet."
-            onRename={(channel) => setDialog({ mode: 'rename', channel })}
+            onEdit={(channel) => setDialog({ mode: 'edit', channel })}
             onDelete={(channel) => setDialog({ mode: 'delete', channel })}
           />
         </>
@@ -70,7 +70,7 @@ export default function Channels() {
         state={dialog}
         onClose={() => setDialog(null)}
         onCreate={createChannel}
-        onRename={renameChannel}
+        onUpdate={updateChannel}
         onDelete={deleteChannel}
       />
     </div>
@@ -81,13 +81,13 @@ function ChannelGroup({
   heading,
   channels,
   empty,
-  onRename,
+  onEdit,
   onDelete,
 }: {
   heading: string
   channels: Channel[]
   empty: string
-  onRename: (c: Channel) => void
+  onEdit: (c: Channel) => void
   onDelete: (c: Channel) => void
 }) {
   return (
@@ -108,8 +108,8 @@ function ChannelGroup({
                   <p className="text-muted-foreground truncate text-xs">{c.topic}</p>
                 )}
               </div>
-              <Button variant="ghost" size="sm" onClick={() => onRename(c)}>
-                Rename
+              <Button variant="ghost" size="sm" onClick={() => onEdit(c)}>
+                Edit
               </Button>
               <Button
                 variant="ghost"
@@ -131,21 +131,21 @@ function ChannelDialog({
   state,
   onClose,
   onCreate,
-  onRename,
+  onUpdate,
   onDelete,
 }: {
   state: DialogState
   onClose: () => void
   onCreate: ReturnType<typeof useChannels>['createChannel']
-  onRename: ReturnType<typeof useChannels>['renameChannel']
+  onUpdate: ReturnType<typeof useChannels>['updateChannel']
   onDelete: ReturnType<typeof useChannels>['deleteChannel']
 }) {
   return (
     <Dialog open={state !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         {state?.mode === 'create' && <CreateForm onCreate={onCreate} onDone={onClose} />}
-        {state?.mode === 'rename' && (
-          <RenameForm channel={state.channel} onRename={onRename} onDone={onClose} />
+        {state?.mode === 'edit' && (
+          <EditForm channel={state.channel} onUpdate={onUpdate} onDone={onClose} />
         )}
         {state?.mode === 'delete' && (
           <DeleteConfirm channel={state.channel} onDelete={onDelete} onDone={onClose} />
@@ -256,16 +256,17 @@ function CreateForm({
   )
 }
 
-function RenameForm({
+function EditForm({
   channel,
-  onRename,
+  onUpdate,
   onDone,
 }: {
   channel: Channel
-  onRename: ReturnType<typeof useChannels>['renameChannel']
+  onUpdate: ReturnType<typeof useChannels>['updateChannel']
   onDone: () => void
 }) {
   const [name, setName] = useState(channel.name)
+  const [topic, setTopic] = useState(channel.topic ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -276,7 +277,7 @@ function RenameForm({
       setError(parsed.error)
       return
     }
-    if (parsed.name === channel.name) {
+    if (parsed.name === channel.name && topic.trim() === (channel.topic ?? '')) {
       onDone()
       return
     }
@@ -284,10 +285,10 @@ function RenameForm({
     setBusy(true)
     setError(null)
     try {
-      await onRename(channel.id, parsed.name)
+      await onUpdate(channel.id, { name: parsed.name, topic })
       onDone()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not rename the channel.')
+      setError(err instanceof Error ? err.message : 'Could not save the channel.')
     } finally {
       setBusy(false)
     }
@@ -296,16 +297,33 @@ function RenameForm({
   return (
     <form onSubmit={(e) => void submit(e)} className="space-y-4">
       <DialogHeader>
-        <DialogTitle>Rename #{channel.name}</DialogTitle>
+        <DialogTitle>Edit #{channel.name}</DialogTitle>
       </DialogHeader>
 
-      <Input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        maxLength={CHANNEL_NAME_MAX + 8}
-        autoFocus
-        aria-label="Channel name"
-      />
+      <div className="space-y-2">
+        <label htmlFor="edit-channel-name" className="text-sm font-medium">
+          Name
+        </label>
+        <Input
+          id="edit-channel-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={CHANNEL_NAME_MAX + 8}
+          autoFocus
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="edit-channel-topic" className="text-sm font-medium">
+          Topic
+        </label>
+        <Input
+          id="edit-channel-topic"
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+          placeholder="What this channel is for"
+        />
+      </div>
 
       {error && (
         <p role="alert" className="text-destructive text-sm">

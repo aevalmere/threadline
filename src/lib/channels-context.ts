@@ -18,7 +18,8 @@ export interface ChannelsContextValue {
   forum: Channel[]
   refresh: () => Promise<void>
   createChannel: (input: CreateChannelInput) => Promise<Channel>
-  renameChannel: (id: string, name: string) => Promise<void>
+  /** Name and topic together — both are edited in the same dialog. */
+  updateChannel: (id: string, patch: { name: string; topic: string }) => Promise<void>
   deleteChannel: (id: string) => Promise<void>
 }
 

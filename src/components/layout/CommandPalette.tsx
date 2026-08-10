@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FileTextIcon, KanbanIcon, MessagesSquareIcon } from 'lucide-react'
 
@@ -15,20 +15,25 @@ import {
  * ⌘K. Navigation only for now — P5 wires the input to the search_all()
  * Postgres function and groups results by entity type (SPEC.md §3).
  */
-export function CommandPalette() {
-  const [open, setOpen] = useState(false)
+export function CommandPalette({
+  open,
+  setOpen,
+}: {
+  open: boolean
+  setOpen: (open: boolean) => void
+}) {
   const navigate = useNavigate()
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
-        setOpen((v) => !v)
+        setOpen(!open)
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [open, setOpen])
 
   function go(to: string) {
     setOpen(false)

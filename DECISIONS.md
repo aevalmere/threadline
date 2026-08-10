@@ -418,3 +418,38 @@ hunting for an app bug that is really a harness bug.
 
 **Remove it if it starts costing more than it saves.** The moment someone
 debugs a difference between mock and real, `supabase start` is the better tool.
+
+---
+
+## #13 — 2026-08-10 — Guest access reverted; supersedes #10
+
+**Supersedes #10 entirely.** The workspace is closed again. Non-negotiable 2
+holds with no exceptions: one blanket `to authenticated` policy per table, and
+`anon` gets nothing.
+
+**Why.** #10 opened the workspace so Ethan could test without logging in. The
+in-memory mock backend (#12) turned out to serve that need better — it needs no
+account at all, works offline, and exposes nothing — so the tradeoff #10 accepted
+had no remaining upside. Ethan's words: *"dont need guest mode because local mode
+works."*
+
+**How.** `20260810093222_revert_guest_access.sql` drops the six `to anon`
+policies, applied as a new migration rather than by editing #10's (Non-negotiable
+6). The client plumbing — `VITE_GUEST_MODE`, `isGuest`, the shared Guest profile
+lookup, the sidebar banner, the seed's inverted probes — is removed rather than
+left dormant, so there is no switch to flip back on by accident.
+
+**`authorId` survives** on the auth context. It came in with guest mode, but it
+is the right shape regardless: one place that answers "whose id goes on rows this
+user creates", rather than every writer reaching into `session.user.id`.
+
+**Verified.** `npm run seed` reports `anon select: denied`, `anon insert:
+denied`, `anon upload: denied` against production, and the signed-in and storage
+assertions still pass — 15/15.
+
+**The exposure window.** The policies were live from 2026-08-10 while the flag
+was only ever set in `.env.local`, never in Cloudflare Pages. The deployed site
+therefore always required a magic link, and no anonymous session ever reached
+production data through the app. The database would have permitted it to anyone
+who found the anon key, which is why this was worth reverting rather than
+leaving.

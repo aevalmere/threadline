@@ -72,7 +72,7 @@ export default function ChannelView() {
   const { channelId } = useParams<{ channelId: string }>()
   const { channels, loading: channelsLoading } = useChannels()
   const { nameFor, byId } = useProfiles()
-  const { authorId, isGuest } = useAuth()
+  const { authorId } = useAuth()
   const {
     messages,
     attachmentsByMessage,
@@ -154,15 +154,9 @@ export default function ChannelView() {
   const rootPending = pending.filter((p) => p.threadRootId === null)
 
   return (
+    /* The channel name and topic live in the app header
+       (CurrentChannelTitle), so this surface is just the conversation. */
     <div className="flex h-full flex-col">
-      <div className="shrink-0 border-b px-6 py-4">
-        <h1 className="text-xl font-semibold tracking-tight">
-          {channel ? `#${channel.name}` : <Skeleton className="h-6 w-32" />}
-        </h1>
-        {channel?.topic && (
-          <p className="text-muted-foreground text-sm">{channel.topic}</p>
-        )}
-      </div>
 
       <div
         ref={listRef}
@@ -272,9 +266,7 @@ export default function ChannelView() {
           same body claim the entry. */}
       {!canWrite && !loading && (
         <p role="alert" className="text-destructive shrink-0 px-6 text-sm">
-          {isGuest
-            ? 'Guest posting is unavailable — the shared Guest profile is missing. Run npm run seed.'
-            : 'You are signed out.'}
+          You are signed out.
         </p>
       )}
 

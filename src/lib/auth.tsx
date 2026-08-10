@@ -4,18 +4,6 @@ import type { AuthError, Session } from '@supabase/supabase-js'
 import { supabase, type Profile } from '@/lib/supabase'
 import { AuthContext, type AuthContextValue } from '@/lib/auth-context'
 
-/**
- * TEMPORARY guest mode — DECISIONS #10.
- *
- * Only ever true when VITE_GUEST_MODE is set at build time. Setting it is not
- * enough on its own: the anon RLS policies from the matching migration have to
- * be applied too, or a guest sees an empty, silently read-only app.
- */
-export const GUEST_MODE = import.meta.env.VITE_GUEST_MODE === 'true'
-
-/** The shared identity guest writes are attributed to. */
-const GUEST_DISPLAY_NAME = 'Guest'
-
 /** GoTrue's way of saying "that address has no account here". */
 function isAccountAbsent(error: AuthError): boolean {
   const code = error.code ?? ''
@@ -54,23 +42,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const userId = session?.user.id
     if (!userId) {
-      // Guest mode borrows the shared Guest profile so writes have an author —
-      // messages.author_id is not null. Looked up rather than hard-coded so no
-      // uuid has to be baked into the bundle.
-      if (GUEST_MODE) {
-        let active = true
-        void supabase
-          .from('profiles')
-          .select('*')
-          .eq('display_name', GUEST_DISPLAY_NAME)
-          .maybeSingle<Profile>()
-          .then(({ data }) => {
-            if (active) setProfile(data ?? null)
-          })
-        return () => {
-          active = false
-        }
-      }
       setProfile(null)
       return
     }
@@ -119,19 +90,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
   }, [])
 
-  const isGuest = GUEST_MODE && session === null
-
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
       profile,
-      isGuest,
-      authorId: session?.user.id ?? (isGuest ? (profile?.id ?? null) : null),
+      authorId: session?.user.id ?? null,
       loading,
       signIn,
       signOut,
     }),
-    [session, profile, isGuest, loading, signIn, signOut],
+    [session, profile, loading, signIn, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -6,12 +6,16 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { AppShellSearchHint } from '@/components/layout/SearchHint'
 import { CommandPalette } from '@/components/layout/CommandPalette'
+import { CurrentChannelTitle } from '@/components/layout/CurrentChannelTitle'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { ChannelsProvider } from '@/lib/channels'
 import { ProfilesProvider } from '@/lib/profiles'
 
 export default function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false)
+  // Lifted so the header's search button and Ctrl/⌘K drive the same palette.
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const openPalette = () => setPaletteOpen(true)
 
   return (
     <ChannelsProvider>
@@ -36,12 +40,21 @@ export default function AppShell() {
                 </SheetContent>
               </Sheet>
 
-              <div className="ml-auto flex items-center gap-2">
-                <span className="text-muted-foreground hidden items-center gap-1.5 text-sm sm:flex">
-                  <SearchIcon className="size-4" />
+              <CurrentChannelTitle />
+
+              {/* The search affordance is a button, not decoration — it opens
+                  the same palette Ctrl/⌘K does. */}
+              <button
+                type="button"
+                onClick={openPalette}
+                className="text-muted-foreground hover:text-foreground hover:bg-accent ml-auto flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-sm"
+              >
+                <SearchIcon className="size-4" />
+                <span className="hidden sm:inline">
                   <AppShellSearchHint />
                 </span>
-              </div>
+                <span className="sr-only">Search</span>
+              </button>
             </header>
 
             {/* No padding here — routes own their insets so a scroll
@@ -52,7 +65,7 @@ export default function AppShell() {
             </main>
           </div>
 
-          <CommandPalette />
+          <CommandPalette open={paletteOpen} setOpen={setPaletteOpen} />
         </div>
       </ProfilesProvider>
     </ChannelsProvider>

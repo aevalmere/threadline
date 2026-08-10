@@ -75,16 +75,23 @@ export function ChannelsProvider({ children }: { children: ReactNode }) {
     [authorId],
   )
 
-  const renameChannel = useCallback(async (id: string, name: string) => {
-    const { error: err } = await supabase.from('channels').update({ name }).eq('id', id)
-    if (err) throw friendly(err, name)
+  const updateChannel = useCallback(
+    async (id: string, patch: { name: string; topic: string }) => {
+      const topic = patch.topic.trim() || null
+      const { error: err } = await supabase
+        .from('channels')
+        .update({ name: patch.name, topic })
+        .eq('id', id)
+      if (err) throw friendly(err, patch.name)
 
-    setChannels((current) =>
-      (current ?? [])
-        .map((c) => (c.id === id ? { ...c, name } : c))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    )
-  }, [])
+      setChannels((current) =>
+        (current ?? [])
+          .map((c) => (c.id === id ? { ...c, name: patch.name, topic } : c))
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      )
+    },
+    [],
+  )
 
   const deleteChannel = useCallback(async (id: string) => {
     const { error: err } = await supabase.from('channels').delete().eq('id', id)
@@ -102,10 +109,10 @@ export function ChannelsProvider({ children }: { children: ReactNode }) {
       forum: (channels ?? []).filter((c) => c.kind === 'forum'),
       refresh,
       createChannel,
-      renameChannel,
+      updateChannel,
       deleteChannel,
     }),
-    [channels, error, refresh, createChannel, renameChannel, deleteChannel],
+    [channels, error, refresh, createChannel, updateChannel, deleteChannel],
   )
 
   return <ChannelsContext.Provider value={value}>{children}</ChannelsContext.Provider>
