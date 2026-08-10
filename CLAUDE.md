@@ -33,7 +33,7 @@ No billing. No roles/permissions (one trusted workspace; auth is the only wall).
 |---|---|---|
 | App | **Vite + React + TypeScript SPA** with react-router | No SSR framework, no Next.js. The entire backend is Supabase; a static SPA deploys to Cloudflare Pages free with no ToS issues and removes the server/client-component confusion class of bugs. |
 | Backend | **Supabase** — Postgres, Auth, Realtime (Broadcast / Presence / Postgres Changes), Storage | One `supabase/` folder, CLI-managed migrations from day one. |
-| Auth | **Magic links.** Public signups DISABLED | User invites teammates from the Supabase dashboard. Supabase built-in email first; switch to Resend SMTP only if rate limits bite. |
+| Auth | **Shared invite code to register, username + password to sign in.** Public signups DISABLED | Changed from magic links in P1 — see DECISIONS #14. The code is checked in the `register` Edge Function, never in the client. Project-level signups stay off, which is what makes that function the only door. Email survives only as the password-reset channel. |
 | UI | **shadcn/ui + Tailwind** | Scaffold chat surfaces from shadcn's chat components; don't hand-roll message lists from scratch. |
 | Rich text | **BlockNote** (free core only — **never install XL packages**) | Doc pages and rich task descriptions. |
 | Kanban DnD | **dnd-kit** | react-beautiful-dnd is dead and forbidden. |
@@ -134,6 +134,6 @@ The Supabase CLI is a **devDependency**, not a global install — always `npx su
 
 ## What the user does (never Claude)
 
-Creates the Supabase project and hands over URL + anon key · disables public signups · **sets Authentication → URL Configuration: Site URL plus Redirect URLs for both `https://<project>.pages.dev/**` and `http://localhost:5173/**`** (without the exact `/auth/callback` origin on the allowlist, magic links silently fall back to Site URL and dead-end) · connects the GitHub repo to Cloudflare Pages (Claude prints the exact clicks) · invites teammate emails from the Supabase dashboard · later if needed: custom domain, Resend SMTP.
+Creates the Supabase project and hands over URL + anon key · disables public signups **and keeps them disabled** (the invite code is only a wall while they are off) · **sets Authentication → URL Configuration: Site URL plus Redirect URLs for both `https://<project>.pages.dev/**` and `http://localhost:5173/**`** (without the exact `/auth/callback` origin on the allowlist, password-reset links silently fall back to Site URL and dead-end) · sets the invite code with `npx supabase secrets set INVITE_CODE=…` (secret-bearing, so never Claude) and shares it with teammates · connects the GitHub repo to Cloudflare Pages (Claude prints the exact clicks) · later if needed: custom domain, Resend SMTP.
 
 **The user never hands over the service_role key for client work.** When blocked on the user, say so once and continue with unblocked items.

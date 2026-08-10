@@ -9,8 +9,15 @@
  * The second half is the verification for Non-negotiable 2: it signs in as a
  * real user through the *anon* client and proves select / insert / update /
  * delete all work under the blanket policy. A green seed run is the evidence
- * that RLS is configured correctly — see DECISIONS #3 for why it authenticates
- * with a generated magic link instead of a password.
+ * that RLS is configured correctly.
+ *
+ * It still mints that session with `generateLink({ type: 'magiclink' })`
+ * (DECISIONS #3), even though the product no longer offers magic-link sign-in
+ * (DECISIONS #14). That is deliberate and worth knowing: it is an *admin* API,
+ * so it does not depend on any UI, and it avoids storing a seed password. It
+ * does depend on the email provider staying enabled — which it is, because
+ * password reset needs it. If that ever changes, switch to a password-based
+ * seed user per #3's stated fallback.
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
@@ -338,6 +345,199 @@ async function storageCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
 }
 
 /**
+ * The account system — DECISIONS #14, and the evidence for the usernames
+ * migration.
+ *
+ * That migration asserts three database behaviours the app depends on and the
+ * client cannot demonstrate: a case-insensitively unique username, a signup
+ * trigger that honours the username chosen at registration, and a resolver
+ * anon can call. A passing UI proves none of them, exactly as DECISIONS #8
+ * argued for the thread trigger.
+ *
+ * The last probe is the load-bearing one: if project-level signups are ever
+ * switched back on, the invite code becomes decoration, because anyone with
+ * the anon key can call GoTrue's signup endpoint and skip the Edge Function
+ * entirely.
+ */
+async function accountsCheck(): Promise<ProbeResult[]> {
+  const out: ProbeResult[] = []
+
+  // Signed OUT on purpose — resolving a username is the one thing that has to
+  // work before anybody has a session.
+  const anon: SupabaseClient = createClient(URL!, ANON!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+
+  const { data: known } = await admin
+    .from('profiles')
+    .select('id, username')
+    .eq('id', await ensureUser(EMAIL_A))
+    .single<{ id: string; username: string }>()
+
+  if (!known?.username) {
+    out.push({ verb: 'username', ok: false, detail: 'seed user has no username' })
+    return out
+  }
+  out.push({ verb: 'username', ok: true, detail: `${EMAIL_A} is @${known.username}` })
+
+  // Resolve, in a case the caller did not type, to prove lower() on both sides.
+  const hit = await anon.rpc('email_for_username', {
+    u: known.username.toUpperCase(),
+  })
+  const resolved = typeof hit.data === 'string' ? hit.data.toLowerCase() : null
+  out.push({
+    verb: 'resolve',
+    ok: !hit.error && resolved === EMAIL_A.toLowerCase(),
+    detail: hit.error
+      ? hit.error.message
+      : resolved === EMAIL_A.toLowerCase()
+        ? 'anon resolved @USERNAME → email, case-insensitively'
+        : `expected ${EMAIL_A}, got ${JSON.stringify(hit.data)}`,
+  })
+
+  // …and an unknown handle must come back empty rather than erroring or
+  // leaking a neighbouring row.
+  const miss = await anon.rpc('email_for_username', { u: '__nobody_by_that_name' })
+  out.push({
+    verb: 'resolve miss',
+    ok: !miss.error && (miss.data ?? null) === null,
+    detail: miss.error
+      ? miss.error.message
+      : (miss.data ?? null) === null
+        ? 'unknown username → null'
+        : `leaked ${JSON.stringify(miss.data)}`,
+  })
+
+  // The unique index. Collides on the exact stored value, not an upper-cased
+  // one: the format CHECK below only permits [a-z0-9._-], so an upper-cased
+  // username is refused by the CHECK (23514) before the index is ever
+  // consulted — which would test the wrong constraint and never report 23505.
+  //
+  // Admin client, which bypasses RLS but not constraints, so a rejection here
+  // is the index rather than a policy.
+  const userB = await ensureUser(EMAIL_B)
+  const clash = await admin
+    .from('profiles')
+    .update({ username: known.username })
+    .eq('id', userB)
+    .select('id')
+  const rejected = clash.error?.code === '23505'
+  out.push({
+    verb: 'unique',
+    ok: rejected,
+    detail: rejected
+      ? `a second @${known.username} was rejected (23505)`
+      : `duplicate username accepted — ${clash.error?.message ?? 'no error'}`,
+  })
+
+  // The format CHECK. Without this the constraint added by the usernames
+  // migration is asserted by nothing — and it is the reason the probe above
+  // has to collide in lower case, so the two belong together.
+  const malformed = await admin
+    .from('profiles')
+    .update({ username: '.nope' })
+    .eq('id', userB)
+    .select('id')
+  const refused = malformed.error?.code === '23514'
+  out.push({
+    verb: 'format',
+    ok: refused,
+    detail: refused
+      ? 'a malformed username was rejected (23514)'
+      : `malformed username accepted — ${malformed.error?.message ?? 'no error'}`,
+  })
+
+  // The trigger honours a username chosen at registration. Throwaway account,
+  // removed either way.
+  const wanted = `probe${Date.now().toString().slice(-8)}`
+  const probeEmail = `${wanted}@probe.invalid`
+  const made = await admin.auth.admin.createUser({
+    email: probeEmail,
+    email_confirm: true,
+    user_metadata: { username: wanted, display_name: 'Probe Person' },
+  })
+  if (made.error || !made.data.user) {
+    out.push({
+      verb: 'trigger',
+      ok: false,
+      detail: made.error?.message ?? 'no user created',
+    })
+  } else {
+    const { data: made_ } = await admin
+      .from('profiles')
+      .select('username, display_name')
+      .eq('id', made.data.user.id)
+      .single<{ username: string; display_name: string }>()
+    const ok = made_?.username === wanted && made_?.display_name === 'Probe Person'
+    out.push({
+      verb: 'trigger',
+      ok,
+      detail: ok
+        ? 'handle_new_user carried the chosen username and display name'
+        : `got ${JSON.stringify(made_)}, wanted @${wanted}`,
+    })
+    await admin.auth.admin.deleteUser(made.data.user.id)
+  }
+
+  // The email-derived path: two teammates created from the dashboard whose
+  // addresses share a local part. Nobody chose these usernames, so the trigger
+  // disambiguates rather than failing — SPEC §2.3's "zero extra steps" promise.
+  const stem = `dupe${Date.now().toString().slice(-8)}`
+  const twins: string[] = []
+  for (const domain of ['a.invalid', 'b.invalid']) {
+    const made = await admin.auth.admin.createUser({
+      email: `${stem}@${domain}`,
+      email_confirm: true,
+    })
+    if (made.data.user) twins.push(made.data.user.id)
+  }
+  if (twins.length !== 2) {
+    out.push({ verb: 'derived', ok: false, detail: 'could not create both probe users' })
+  } else {
+    const { data: pair } = await admin
+      .from('profiles')
+      .select('id, username')
+      .in('id', twins)
+    const names = (pair ?? []).map((p) => (p as { username: string }).username).sort()
+    const ok = names.length === 2 && names[0] === stem && names[1] === `${stem}-2`
+    out.push({
+      verb: 'derived',
+      ok,
+      detail: ok
+        ? `colliding emails became @${stem} and @${stem}-2`
+        : `expected @${stem} and @${stem}-2, got ${JSON.stringify(names)}`,
+    })
+  }
+  for (const id of twins) await admin.auth.admin.deleteUser(id)
+
+  // Signups must stay disabled at the project level. This is what makes the
+  // invite code a wall instead of a suggestion.
+  //
+  // Judged on the error *code*, not merely on "no user came back": a rate
+  // limit, a rejected address or a password-policy refusal would all look like
+  // a refusal on a project with signups wide open.
+  const openSignup = await anon.auth.signUp({
+    email: `__probe_${crypto.randomUUID()}@probe.invalid`,
+    password: `${crypto.randomUUID()}Aa1!`,
+  })
+  const gotUser = !!openSignup.data.user || !!openSignup.data.session
+  const disabled = openSignup.error?.code === 'signup_disabled'
+  out.push({
+    verb: 'signup shut',
+    ok: !gotUser && disabled,
+    detail: gotUser
+      ? 'PUBLIC SIGNUP IS ENABLED — anyone can create an account without the invite code'
+      : disabled
+        ? 'refused (signup_disabled)'
+        : `refused, but for the wrong reason: ${
+            openSignup.error?.code ?? 'no code'
+          } — ${openSignup.error?.message ?? 'no error'}. Signups may still be on.`,
+  })
+
+  return out
+}
+
+/**
  * Non-negotiable 2's verification. Mints a real session for `email` without a
  * password (DECISIONS #3), then runs all four verbs through the anon client.
  */
@@ -463,6 +663,7 @@ async function rlsCheck(email: string) {
 
   results.push(...(await attachmentsCheck(anon)))
   results.push(...(await storageCheck(anon)))
+  results.push(...(await accountsCheck()))
   results.push(...(await deniedWithoutSession()))
 
   for (const r of results) {
@@ -476,7 +677,10 @@ async function rlsCheck(email: string) {
     console.error('\n✗ RLS check FAILED — the blanket policy is not correct.')
     process.exit(1)
   }
-  console.log('✓ RLS check PASSED — authenticated has full access, anon has none.\n')
+  console.log(
+    '✓ RLS check PASSED — authenticated has full access; anon has no table ' +
+      'access (only email_for_username, by design — DECISIONS #14).\n',
+  )
 }
 
 /**

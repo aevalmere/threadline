@@ -453,3 +453,86 @@ therefore always required a magic link, and no anonymous session ever reached
 production data through the app. The database would have permitted it to anyone
 who found the anon key, which is why this was worth reverting rather than
 leaving.
+
+---
+
+## #14 — 2026-08-10 — Accounts: invite-code registration, username + password sign-in
+
+**Supersedes the Auth row of the locked stack** in `CLAUDE.md` and all of
+SPEC §5. Magic-link sign-in is gone. `CLAUDE.md` and `SPEC.md` are updated in
+the same commit (Non-negotiable 4).
+
+**Decision.** Registration is gated by a **shared invite code**, checked inside a
+Supabase Edge Function that creates the account with the admin API. Sign-in is
+**username + password**. Usernames are unique case-insensitively and are also
+the @mention key. Profiles gain `username`, and people can edit their username,
+display name and avatar.
+
+**Why an Edge Function, and not a code checked in the browser.** The anon key
+ships in the bundle and GoTrue's `signUp` is a public endpoint. A client-side
+invite code stops nobody: you call the API directly and skip the UI. So the
+check has to run where it cannot be skipped, holding the code as a secret the
+bundle never sees. Project-level signups stay **disabled** — that setting is
+what makes the Edge Function the only door, and `scripts/seed.ts` asserts it is
+still off on every run. `service_role` is unchanged by this: a function secret
+is neither client code nor the repo (Non-negotiable 2 and 9).
+
+**`email_for_username` is callable by `anon`, deliberately.** Supabase
+authenticates on email + password and the user types a username, so something
+reachable without a session must map one to the other. It is one `security
+definer` function returning one scalar column — `anon` still cannot read
+`profiles` or `auth.users`.
+
+The cost is larger than "it reveals an email", and is stated here in full: it is
+an **account-existence oracle**. An unauthenticated caller can confirm which
+usernames are real and collect the matching addresses, which also undoes
+GoTrue's deliberate refusal to distinguish unknown-email from wrong-password. It
+is inherent to username sign-in, not to this implementation. The alternative —
+making the auth email synthetic (`user@users.threadline.invalid`) — exposes
+nothing but breaks password-reset delivery for everybody, turning every
+forgotten password into a manual dashboard job. For a 5–30 person internal tool
+behind an invite code, the oracle is the cheaper failure. Ethan chose this after
+being shown both.
+
+**Registration auto-confirms the email.** Supabase's built-in SMTP allows only a
+few messages an hour, and onboarding is exactly when everybody registers at
+once. The invite code is already the access gate, so confirmation would be
+gating something already gated. Cost: a typo'd address can never receive a
+password reset, and Ethan fixes it in the dashboard.
+
+**Anyone can rename anyone.** The blanket policy on `profiles` (Non-negotiable 2)
+now governs a *sign-in identifier* — any authenticated teammate can UPDATE
+another teammate's username. That is the rule working as specified in a trusted
+workspace, and it must **not** be "fixed" with an ownership policy; `CLAUDE.md`
+warns against exactly that. Noted because it looks alarming and is not.
+
+**Verification.** `scripts/seed.ts` gained `accountsCheck`, which asserts the
+things this migration claims and the UI cannot prove: `email_for_username`
+resolves through a **signed-out** client and is case-insensitive on input, an
+unknown username returns null rather than a neighbouring row, the unique index
+rejects a duplicate, the format CHECK rejects a malformed name, `handle_new_user`
+carries a chosen username and display name through from `raw_user_meta_data`,
+colliding email local parts become `name` and `name-2`, and **public signup is
+refused with `signup_disabled`**. That last one is the one that matters: without
+it the Edge Function is decoration.
+
+**A note on the case-insensitive index.** `profiles_username_lower_key` indexes
+`lower(username)`, but the format CHECK only permits `[a-z0-9._-]` — so no
+upper-cased username can be stored in the first place, and a plain unique index
+would do the same job today. The `lower()` is defensive: it keeps the invariant
+if the CHECK is ever relaxed, and it matches how sign-in looks names up. The
+seed probe therefore collides on the exact stored value, because an upper-cased
+one is refused by the CHECK (23514) before the index is ever consulted — a first
+draft asserted 23505 there and could never have passed.
+
+**Known limits, accepted.**
+- No rate limiting of our own on the register function beyond the platform's, so
+  the invite code must be long and random. Rotating it is one `secrets set`.
+- The username format rule now lives in three places — `slugify_username()` and
+  a CHECK constraint in the database, `src/lib/username.ts` in the client, and a
+  re-check in the Edge Function. The database is the wall; the other two exist
+  for instant errors. A single `.sql`-sourced rule is not worth the machinery at
+  this size, but they must be changed together.
+- A dashboard invite whose email local part collides with an existing username
+  gets a numeric suffix; a username *chosen at registration* that collides
+  raises instead. Different on purpose — see the migration's comment.

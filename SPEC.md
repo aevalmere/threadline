@@ -10,7 +10,7 @@
 
 One workspace, 5–30 trusted teammates. **No roles, no permissions, no ownership checks.** Authentication is the only wall: if you are signed in, you can read and write everything. This is a deliberate product decision, not an oversight — see Non-negotiable 2.
 
-Membership is created by the user inviting teammates from the Supabase dashboard. Public signups are disabled at the project level *and* every client sign-in call passes `shouldCreateUser: false`.
+Membership is created by **registering with the workspace's shared invite code** (§5). Public signups stay disabled at the project level, so the invite code — checked server-side in an Edge Function — is the only way in. Inviting someone means giving them the code; removing someone means deleting their account and rotating it. The user can still create an account straight from the Supabase dashboard, which works unchanged.
 
 ### 1.2 Channels
 
@@ -90,21 +90,28 @@ create policy "<t>_authenticated_all" on public.<t>
 
 One blanket policy per table. No per-row ownership policies. No policy mazes. `anon` gets nothing. The `service_role` key never appears in client code or the repo — it exists only in `.env.local` for `scripts/seed.ts`.
 
+**One deliberate exception, and only one.** `email_for_username(text)` is a `security definer` function granted to `anon`, because sign-in resolves a typed username to an email before any session exists (§5). It returns one scalar column and grants no table access. DECISIONS #14 records what that costs — it is an account-existence oracle — and why it was still the better trade. Anything else reachable by `anon` is a bug.
+
 The seed script proves this end to end by signing in as a real user through the **anon** client and exercising all four verbs (select / insert / update / delete) against a live table.
 
 ### 2.3 Tables
 
 Phase column = when the migration lands.
 
-#### `profiles` — P0
+#### `profiles` — P0, `username` added in P1
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `uuid` PK | → `auth.users(id)` on delete cascade |
-| `display_name` | `text not null` | seeded from email local-part by trigger |
-| `avatar_url` | `text` | |
+| `username` | `text not null` | unique on `lower(username)`; `check (username ~ '^[a-z0-9][a-z0-9._-]{2,23}$')` |
+| `display_name` | `text not null` | chosen at registration; falls back to the username |
+| `avatar_url` | `text` | **storage path** in the `attachments` bucket under `avatars/`, not a URL — the bucket is private, so it is signed on read |
 | `created_at` | `timestamptz not null default now()` | |
 
-Trigger `handle_new_user()` `after insert on auth.users` inserts the profile row. This is what makes a dashboard-invited teammate work with zero extra steps.
+`username` is both the sign-in identifier (§5) and the @mention key. It is unique so a mention is unambiguous; display names are not unique and never resolve mentions.
+
+Trigger `handle_new_user()` `after insert on auth.users` inserts the profile row, reading `username` and `display_name` from `raw_user_meta_data`. This is what makes a dashboard-created teammate work with zero extra steps: with no metadata it derives a username from the email local part, disambiguating with a numeric suffix. A username *chosen at registration* that collides raises instead — see DECISIONS #14.
+
+Any authenticated teammate can rename any other, because §2.2's blanket policy applies here too. Deliberate; do not "fix" it with an ownership policy.
 
 #### `channels` — P0
 | Column | Type | Notes |
@@ -255,9 +262,19 @@ Client-side debounce on typing and presence broadcasts is **≥300ms**, and unre
 
 ## 5. Auth flow
 
-1. `/login` → email → `signInWithOtp({ email, options: { shouldCreateUser: false, emailRedirectTo: <origin>/auth/callback } })`.
-2. Supabase sends the magic link (built-in email; Resend SMTP only if rate limits bite).
-3. `/auth/callback` — supabase-js PKCE + `detectSessionInUrl` exchanges the code, then redirects to `/`.
-4. `AuthProvider` holds session state via `onAuthStateChange`; `RequireAuth` guards every app route.
+**Invite code to register, username + password to sign in.** Magic-link sign-in was removed in P1; see DECISIONS #14 for why, and for the costs accepted.
 
-An unknown email is a silent no-op — Supabase does not leak account existence, and the UI says "If that address is on the team, a link is on its way."
+**Register** — `/register` takes the invite code, an email, a username, a display name and a password. It calls the `register` **Edge Function**, which:
+1. compares the code against its `INVITE_CODE` secret in constant time,
+2. re-validates the username shape and availability,
+3. calls `auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { username, display_name } })`.
+
+The client then signs in normally. **Project-level signups stay disabled**, so the function is the only door — a code checked in the browser would stop nobody, because the anon key is in the bundle and `signUp` is public.
+
+**Sign in** — `/login` takes username + password. The client calls `email_for_username(u)`, a `security definer` function granted to `anon`, then `signInWithPassword`. A wrong username and a wrong password give the same message.
+
+**Forgot password** — `/reset` sends `resetPasswordForEmail`; the link lands on `/auth/callback`, which exchanges the code and routes to the set-a-new-password form. Email exists only for this.
+
+`AuthProvider` holds session state via `onAuthStateChange`; `RequireAuth` guards every app route.
+
+**Profile editing** — `/settings` changes display name, username and avatar. A taken username surfaces the unique-index `23505` as a readable error.
