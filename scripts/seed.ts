@@ -47,11 +47,22 @@ function die(step: string, error: { message: string } | null): void {
   }
 }
 
+/**
+ * TEMPORARY (DECISIONS #10). Declares that anon access is *meant* to be open,
+ * so the signed-out probes assert the intended posture in both directions
+ * instead of silently losing their teeth.
+ */
+const GUEST_MODE = process.env.GUEST_MODE === 'true'
+
 /** Create the user, or reuse them if a previous seed run already did. */
-async function ensureUser(email: string): Promise<string> {
+async function ensureUser(
+  email: string,
+  displayName?: string,
+): Promise<string> {
   const { data, error } = await admin.auth.admin.createUser({
     email,
     email_confirm: true,
+    user_metadata: displayName ? { display_name: displayName } : undefined,
   })
   if (!error && data.user) return data.user.id
 
@@ -92,6 +103,13 @@ async function main() {
   const userA = await ensureUser(EMAIL_A)
   const userB = await ensureUser(EMAIL_B)
   console.log(`✓ users        ${EMAIL_A}, ${EMAIL_B}`)
+
+  // TEMPORARY (DECISIONS #10). Guest writes need an author — messages.author_id
+  // is not null — so guest mode shares one profile. Created unconditionally so
+  // flipping VITE_GUEST_MODE needs no reseed; it is inert while guest mode is
+  // off, because nothing can sign in as it.
+  await ensureUser('guest@threadline.local', 'Guest')
+  console.log('✓ guest        shared Guest profile for VITE_GUEST_MODE')
 
   const { error: profileErr, count: profileCount } = await admin
     .from('profiles')
@@ -471,7 +489,13 @@ async function rlsCheck(email: string) {
     console.error('\n✗ RLS check FAILED — the blanket policy is not correct.')
     process.exit(1)
   }
-  console.log('✓ RLS check PASSED — authenticated has full access, anon has none.\n')
+  console.log(
+    GUEST_MODE
+      ? '✓ RLS check PASSED — authenticated has full access, and so does anon.\n' +
+          '\n  ⚠ GUEST MODE IS ON. Anyone with the URL can read and write this\n' +
+          '    workspace without signing in. Revert per DECISIONS #10 when done.\n'
+      : '✓ RLS check PASSED — authenticated has full access, anon has none.\n',
+  )
 }
 
 /**
@@ -492,15 +516,24 @@ async function deniedWithoutSession() {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
+  // GUEST_MODE inverts what these assert. Declaring the intent in .env.local
+  // keeps them meaningful in both directions: with guest mode off, anon must be
+  // denied; with it on, anon must actually work, so a half-applied migration
+  // that leaves guests staring at an empty app fails here instead of in
+  // someone's browser.
   const sel = await anon.from('channels').select('id').limit(1)
   const visible = sel.data?.length ?? 0
+  const canRead = !sel.error && visible > 0
   out.push({
     verb: 'anon select',
-    ok: !!sel.error || visible === 0,
-    detail:
-      !!sel.error || visible === 0
-        ? 'denied'
-        : `${visible} rows readable without a session — RLS is off or the policy is not scoped to authenticated`,
+    ok: GUEST_MODE ? canRead : !canRead,
+    detail: GUEST_MODE
+      ? canRead
+        ? `${visible} rows readable — guest mode is ON, as configured`
+        : 'GUEST MODE IS ON but anon cannot read — is the guest migration applied?'
+      : canRead
+        ? `${visible} rows readable without a session — RLS is off or the policy is not scoped to authenticated`
+        : 'denied',
   })
 
   const ins = await anon
@@ -508,15 +541,21 @@ async function deniedWithoutSession() {
     .insert({ name: `${RLS_PROBE}_anon`, kind: 'chat' })
     .select('id')
   const created = ins.data?.length ?? 0
+  const canWrite = !ins.error && created > 0
   out.push({
     verb: 'anon insert',
-    ok: !!ins.error || created === 0,
-    detail: !!ins.error || created === 0 ? 'denied' : 'row created without a session',
+    ok: GUEST_MODE ? canWrite : !canWrite,
+    detail: GUEST_MODE
+      ? canWrite
+        ? 'row created — guest mode is ON, as configured'
+        : 'GUEST MODE IS ON but anon cannot write'
+      : canWrite
+        ? 'row created without a session'
+        : 'denied',
   })
 
   // Clean up in case the insert was wrongly allowed, so the failure is
   // reported without also poisoning the next run.
-  if (created > 0) await admin.from('channels').delete().eq('name', `${RLS_PROBE}_anon`)
 
   // Storage has its own policy surface (DECISIONS #9), so it needs its own
   // signed-out probe: the four bucket-scoped policies are `to authenticated`,
@@ -528,8 +567,14 @@ async function deniedWithoutSession() {
   const uploaded = !up.error && !!up.data?.path
   out.push({
     verb: 'anon upload',
-    ok: !uploaded,
-    detail: uploaded ? 'file stored without a session' : 'denied',
+    ok: GUEST_MODE ? uploaded : !uploaded,
+    detail: GUEST_MODE
+      ? uploaded
+        ? 'stored — guest mode is ON, as configured'
+        : 'GUEST MODE IS ON but anon cannot upload'
+      : uploaded
+        ? 'file stored without a session'
+        : 'denied',
   })
   if (uploaded) {
     const admin_ = createClient(URL!, SERVICE!, {
@@ -537,6 +582,8 @@ async function deniedWithoutSession() {
     })
     await admin_.storage.from('attachments').remove([path])
   }
+  // Same for the channel row, whether it was created by mistake or by design.
+  if (canWrite) await admin.from('channels').delete().eq('name', `${RLS_PROBE}_anon`)
 
   return out
 }

@@ -27,7 +27,8 @@ A channel has a `kind`: `'chat'` or `'forum'`.
 
 - A top-level message has `thread_root_id IS NULL`.
 - A reply has `thread_root_id` pointing at the top-level message it belongs to. **Threads are one level deep** — replies never nest further; a reply to a reply attaches to the same root.
-- Edits set `edited_at`. Deletes are soft: `deleted_at` is set and the body renders as "message deleted". No edit history (non-goal).
+- Edits set `edited_at`. No edit history (non-goal).
+- **Deleting a message tombstones the row and destroys its content.** `deleted_at` is set, `body` is blanked to `''`, and every `attachments` row owned by the message is deleted along with its object in storage. The row itself survives so replies keep their root and the change reaches other clients as an ordinary UPDATE — a hard `DELETE` would arrive carrying only the primary key, which the channel filter cannot match, so other clients would keep showing it until they reloaded. The tombstone renders as "message deleted". **The text and files are unrecoverable.** See DECISIONS #11.
 
 ### 1.4 Unread badges
 
@@ -197,7 +198,7 @@ Index on `(status, position)`.
 #### `attachments` — P1
 `id uuid pk`, `owner_type text check in ('message','post','page','task')`, `owner_id text` (§2.1), `storage_path text not null`, `filename text not null`, `mime text`, `size_bytes int`, `created_at timestamptz not null default now()`. Index on `(owner_type, owner_id)`.
 
-Storage bucket `attachments`, **10 MB cap**, images render as inline thumbnails.
+Storage bucket `attachments`, **10 MB cap**, images render as inline thumbnails. Files do not outlive their owner: deleting a message deletes its attachment rows and storage objects (§1.3), and a single attachment can be deleted on its own.
 
 The bucket is **private**. Reads go through short-lived signed URLs, so an uploaded file is unreadable without a session — "auth is the only wall" (§1.1) covers files too. The 10 MB cap is set on the bucket *and* checked client-side: the bucket is the real wall, the client check just avoids a wasted upload. `storage.objects` carries four bucket-scoped policies rather than §2.2's single blanket policy, because it is one table holding every bucket. See DECISIONS #9.
 

@@ -276,3 +276,97 @@ while the migration reported success.
 - `isImage()` accepts `image/svg+xml`, and an SVG opened from a signed URL
   executes script on the storage origin. No session material lives there, so the
   impact is low; noted so it is a known risk rather than an oversight.
+
+---
+
+## #10 — 2026-08-10 — TEMPORARY: the workspace is open to anonymous users
+
+**This entry describes a deliberate, reversible weakening of the only wall the
+app has.** It is written to be impossible to miss in a future session.
+
+**Decision.** Migration `20260810052810_temporary_guest_access.sql` adds `to anon`
+policies to `profiles`, `channels`, `channel_members`, `messages`, `attachments`
+and the `attachments` bucket's `storage.objects`. With `VITE_GUEST_MODE=true`,
+`RequireAuth` lets an unauthenticated visitor straight into the app.
+
+**What this exposes.** Anyone who loads the deployed URL can read *and write*
+every channel, message and file without signing in. No password, no invite, no
+magic link. The URL is the only remaining secret.
+
+**Why it was done anyway.** Ethan asked for it explicitly to test without
+logging in, and reaffirmed it after being shown exactly this consequence,
+including the alternative (a dev-only guest login that leaves production
+untouched). That is his call to make. It is recorded here so nobody later
+mistakes it for an accident — Non-negotiable 2 is otherwise unambiguous, and a
+future session finding `to anon` policies should assume they are wrong unless
+this entry still applies.
+
+**Reverting.** Six `drop policy` statements, listed in full at the top of the
+migration, as a **new** migration (Non-negotiable 6 — never edit one that has
+run). Then unset `VITE_GUEST_MODE` in `.env.local` and in Cloudflare Pages, and
+set `GUEST_MODE=false` so the seed asserts the closed posture again. The
+`to authenticated` policies are untouched throughout, so nothing else has to
+change and no data moves.
+
+**Guest identity.** `messages.author_id` is `not null`, so guest writes need an
+author. The seed creates one shared profile with display name `Guest`, and the
+client looks it up by name rather than baking a uuid into the bundle. Every
+guest is therefore the same person as far as the data is concerned — there is no
+way to tell two guests apart, and nothing tries to.
+
+**The seed check flips rather than dulls.** `GUEST_MODE=true` in `.env.local`
+makes the signed-out probes assert that anon *can* read, write and upload. So
+the check still fails loudly in both directions: with guest mode off, an
+accidental anon policy fails; with it on, a half-applied migration that leaves
+guests staring at an empty app also fails. What it can no longer do is notice
+that the workspace is public, because right now that is the intended state — the
+run prints a warning banner instead.
+
+**Still true while this is on.** The bucket stays private (DECISIONS #9): reads
+go through signed URLs, and the unsigned public URL still 400s. Guest mode
+widens *who* may ask for a signed URL; it does not make the bucket public.
+
+---
+
+## #11 — 2026-08-10 — Deleting a message destroys its content; supersedes #9's orphan bullet
+
+**Supersedes** the bullet in #9 that read: *"Deleting a message leaves its
+attachment rows and storage objects orphaned — no FK, by design (SPEC §1.8). The
+bytes still count against the 1 GB. A sweep belongs in P6 or the backlog, not
+here."* That is no longer true. The sweep happens at delete time.
+
+**Decision.** Deleting a message sets `deleted_at`, blanks `body` to `''`, and
+deletes every attachment row owned by it together with its object in storage.
+The row itself stays as a tombstone. SPEC §1.3 is updated to match.
+
+**Why the row survives but its content does not.** Ethan asked for deletes to
+actually free storage rather than leave files behind. But a hard `DELETE` on
+`messages` would be worse for the product: the realtime payload carries only the
+primary key under the default replica identity, so the `channel_id=eq.` filter
+cannot match it and other clients would keep showing the message until they
+reloaded. A tombstone propagates as an ordinary UPDATE, which always arrives, and
+it keeps `thread_root_id` resolvable so a deleted root does not orphan its
+replies. Keeping the row costs a few dozen bytes; the content — which is all of
+the bytes that matter — genuinely goes.
+
+**Ordering, and what it accepts.** Storage objects first, then attachment rows,
+then the message UPDATE. Not atomic, and it cannot be: storage is not in the
+database transaction. Two partial states are possible and both are recoverable:
+
+| Fails after | State | Recovery |
+|---|---|---|
+| `storage.remove()` | rows point at objects that are gone | re-click Delete; `remove()` is idempotent |
+| attachment row delete | message not yet tombstoned, files gone | re-click Delete |
+
+Every branch sets a visible error, so no partial state is silent. Storage first
+is the deliberate order: the failure that leaves *bytes* behind is the one worth
+avoiding, since that is the resource under pressure.
+
+**Known gap.** `deleteAttachment` has no realtime counterpart — only INSERTs on
+`attachments` are subscribed — so deleting a single file leaves other clients
+rendering it until they reload, against a signed URL that now 404s. Deleting a
+whole message is unaffected, because the message UPDATE propagates and the UI
+hides attachments on a tombstone. Parked in BACKLOG rather than fixed here: it
+needs a DELETE subscription whose payload, under the default replica identity,
+carries only the primary key — so it wants the same thought as #4's column-list
+question rather than a quick patch.

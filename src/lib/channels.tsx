@@ -26,7 +26,7 @@ function friendly(error: { code?: string; message: string }, name: string): Erro
  * P1 later swaps the manual refresh() calls for a realtime subscription.
  */
 export function ChannelsProvider({ children }: { children: ReactNode }) {
-  const { session } = useAuth()
+  const { authorId } = useAuth()
   const [channels, setChannels] = useState<Channel[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -57,7 +57,7 @@ export function ChannelsProvider({ children }: { children: ReactNode }) {
           name,
           kind,
           topic: topic?.trim() || null,
-          created_by: session?.user.id ?? null,
+          created_by: authorId,
         })
         .select('*')
         .single()
@@ -72,7 +72,7 @@ export function ChannelsProvider({ children }: { children: ReactNode }) {
       )
       return created
     },
-    [session?.user.id],
+    [authorId],
   )
 
   const renameChannel = useCallback(async (id: string, name: string) => {

@@ -56,8 +56,7 @@ export interface Message {
  * Non-negotiable 8 protects.
  */
 export function useMessages(channelId: string | undefined) {
-  const { session } = useAuth()
-  const userId = session?.user.id ?? null
+  const { authorId: userId } = useAuth()
 
   const [messages, setMessages] = useState<Message[]>([])
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -69,6 +68,10 @@ export function useMessages(channelId: string | undefined) {
   // every arriving message would churn the composer's handlers.
   const messagesRef = useRef<Message[]>([])
   messagesRef.current = messages
+  // Same reason: deleteMessage needs the current attachments without being
+  // re-created every time one arrives.
+  const attachmentsRef = useRef<Attachment[]>([])
+  attachmentsRef.current = attachments
 
   /**
    * Bumped whenever the open channel changes. `/channels/:channelId` renders
@@ -227,12 +230,12 @@ export function useMessages(channelId: string | undefined) {
    * that helper is what keeps threads one level deep (SPEC §1.3).
    */
   const send = useCallback(
-    async (rawBody: string, threadRootId: number | null = null, file?: File | null) => {
+    async (rawBody: string, threadRootId: number | null = null, files: File[] = []) => {
       const body = rawBody.trim()
-      // A file alone is a valid message; `body text not null` accepts ''.
-      if ((!body && !file) || !channelId || !userId) return
+      // Files alone are a valid message; `body text not null` accepts ''.
+      if ((!body && files.length === 0) || !channelId || !userId) return
 
-      if (file) {
+      for (const file of files) {
         const check = validateFile(file)
         if (!check.ok) {
           setError(check.error)
@@ -249,15 +252,15 @@ export function useMessages(channelId: string | undefined) {
         threadRootId,
         sinceId: highestMessageId(messagesRef.current),
         status: 'sending',
-        filename: file?.name ?? null,
+        filename: files.map((f) => f.name).join(', ') || null,
       }
       setPending((p) => [...p, entry])
       setError(null)
 
       // Storage first. A failed upload must not leave a message behind claiming
-      // an attachment that does not exist.
-      let storagePath: string | null = null
-      if (file) {
+      // attachments that do not exist.
+      const uploaded: { path: string; file: File }[] = []
+      for (const file of files) {
         const path = storagePathFor(channelId, file.name, crypto.randomUUID())
         const { error: upErr } = await supabase.storage
           .from(BUCKET)
@@ -265,9 +268,14 @@ export function useMessages(channelId: string | undefined) {
         if (upErr) {
           setError(`Could not upload ${file.name}: ${upErr.message}`)
           setPending((p) => markPending(p, entry.key, 'failed'))
+          // Roll back whatever already landed, so a half-failed send does not
+          // quietly consume the free tier's 1 GB.
+          if (uploaded.length > 0) {
+            void supabase.storage.from(BUCKET).remove(uploaded.map((u) => u.path))
+          }
           return
         }
-        storagePath = path
+        uploaded.push({ path, file })
       }
 
       const { data, error: err } = await supabase
@@ -285,33 +293,35 @@ export function useMessages(channelId: string | undefined) {
         // Marked regardless of epoch: the entry is tagged with its channel, so
         // the failed bubble and its Retry are waiting when the user returns.
         setPending((p) => markPending(p, entry.key, 'failed'))
-        // Don't let a failed send quietly consume the free tier's 1 GB.
-        if (storagePath) void supabase.storage.from(BUCKET).remove([storagePath])
+        if (uploaded.length > 0) {
+          void supabase.storage.from(BUCKET).remove(uploaded.map((u) => u.path))
+        }
         return
       }
 
       const message = data as Message
 
-      if (file && storagePath) {
+      if (uploaded.length > 0) {
         const { data: att, error: attErr } = await supabase
           .from('attachments')
-          .insert({
-            owner_type: 'message',
-            owner_id: String(message.id),
-            storage_path: storagePath,
-            filename: file.name,
-            mime: file.type || null,
-            size_bytes: file.size,
-          })
+          .insert(
+            uploaded.map((u) => ({
+              owner_type: 'message',
+              owner_id: String(message.id),
+              storage_path: u.path,
+              filename: u.file.name,
+              mime: u.file.type || null,
+              size_bytes: u.file.size,
+            })),
+          )
           .select(ATTACHMENT_COLUMNS)
-          .single()
 
         if (attErr) {
           // The message is already sent and visible to everyone. Surface the
-          // partial failure rather than pretending the file arrived.
-          setError(`${file.name} was uploaded but could not be attached.`)
+          // partial failure rather than pretending the files arrived.
+          setError('Uploaded, but could not be attached to the message.')
         } else if (epochRef.current === epoch) {
-          absorbAttachments([att as Attachment])
+          absorbAttachments((att ?? []) as Attachment[])
         }
       }
 
@@ -323,10 +333,101 @@ export function useMessages(channelId: string | undefined) {
     [channelId, userId, absorb, absorbAttachments],
   )
 
+  /**
+   * Delete a message: scrub the content, keep a tombstone.
+   *
+   * Ethan's call, and it is the right shape. The row stays so replies keep
+   * their root and the change reaches everyone as a normal UPDATE — a hard
+   * delete would arrive as a DELETE payload carrying only the primary key,
+   * which the channel filter cannot match, so other clients would keep showing
+   * it until they reloaded. But the *content* genuinely goes: the body is
+   * blanked and every attached file is removed from storage, so a deleted
+   * message stops costing anything against the 1 GB.
+   */
+  const deleteMessage = useCallback(
+    async (id: number) => {
+      const owned = attachmentsRef.current.filter(
+        (a) => a.owner_type === 'message' && a.owner_id === String(id),
+      )
+
+      if (owned.length > 0) {
+        const { error: rmErr } = await supabase.storage
+          .from(BUCKET)
+          .remove(owned.map((a) => a.storage_path))
+        if (rmErr) {
+          setError(`Could not delete the attached file: ${rmErr.message}`)
+          return
+        }
+        const { error: rowErr } = await supabase
+          .from('attachments')
+          .delete()
+          .in(
+            'id',
+            owned.map((a) => a.id),
+          )
+        if (rowErr) {
+          setError(`Could not delete the attachment: ${rowErr.message}`)
+          return
+        }
+      }
+
+      const { error: err } = await supabase
+        .from('messages')
+        .update({ body: '', deleted_at: new Date().toISOString() })
+        .eq('id', id)
+      if (err) {
+        setError(`Could not delete the message: ${err.message}`)
+        return
+      }
+
+      setAttachments((current) =>
+        current.filter((a) => !(a.owner_type === 'message' && a.owner_id === String(id))),
+      )
+      // The realtime UPDATE will also arrive; absorbing locally just avoids the
+      // round-trip delay for the person who clicked.
+      setMessages((current) =>
+        current.map((m) =>
+          m.id === id ? { ...m, body: '', deleted_at: new Date().toISOString() } : m,
+        ),
+      )
+    },
+    [],
+  )
+
+  /** Remove one file from a message that keeps its text. */
+  const deleteAttachment = useCallback(async (attachment: Attachment) => {
+    const { error: rmErr } = await supabase.storage
+      .from(BUCKET)
+      .remove([attachment.storage_path])
+    if (rmErr) {
+      setError(`Could not delete the file: ${rmErr.message}`)
+      return
+    }
+    const { error: rowErr } = await supabase
+      .from('attachments')
+      .delete()
+      .eq('id', attachment.id)
+    if (rowErr) {
+      setError(`Could not delete the attachment: ${rowErr.message}`)
+      return
+    }
+    setAttachments((current) => current.filter((a) => a.id !== attachment.id))
+  }, [])
+
   const retry = useCallback(
     async (key: string) => {
       const entry = pending.find((p) => p.key === key)
       if (!entry) return
+      // The File objects were never retained, so a files-only send has nothing
+      // to retry. Dropping the entry and calling send('') would hit its
+      // empty-input guard and the bubble would vanish with nothing sent — keep
+      // it, and say why.
+      if (!entry.body) {
+        setError(
+          `${entry.filename ?? 'That file'} was not sent. Attach it again to retry.`,
+        )
+        return
+      }
       setPending((p) => dropPending(p, key))
       await send(entry.body, entry.threadRootId)
     },
@@ -357,5 +458,8 @@ export function useMessages(channelId: string | undefined) {
     send,
     retry,
     discard,
+    deleteMessage,
+    deleteAttachment,
+    dismissError: useCallback(() => setError(null), []),
   }
 }
