@@ -71,7 +71,7 @@ export interface MessageActions {
 export default function ChannelView() {
   const { channelId } = useParams<{ channelId: string }>()
   const { channels, loading: channelsLoading } = useChannels()
-  const { nameFor, byId } = useProfiles()
+  const { nameFor, avatarUrlFor } = useProfiles()
   const { authorId } = useAuth()
   const {
     messages,
@@ -106,9 +106,8 @@ export default function ChannelView() {
   }
 
   // Without an author id nothing can be written — messages.author_id is not
-  // null. In guest mode that means the shared Guest profile did not resolve.
-  // Say so, rather than letting someone type into a composer whose Send button
-  // silently discards the message.
+  // null. Say so, rather than letting someone type into a composer whose Send
+  // button silently discards the message.
   const canWrite = authorId !== null
 
   // Every attachment path on screen, signed in one batched request.
@@ -219,7 +218,7 @@ export default function ChannelView() {
               <MessageGroupRow
                 key={group.key}
                 authorName={nameFor(group.authorId)}
-                avatarUrl={byId.get(group.authorId)?.avatar_url ?? null}
+                avatarUrl={avatarUrlFor(group.authorId)}
                 messages={group.messages}
                 attachmentsFor={(id) => attachmentsByMessage.get(String(id)) ?? []}
                 signedUrlFor={signedUrlFor}
@@ -250,7 +249,7 @@ export default function ChannelView() {
                 key={p.key}
                 pending={p}
                 authorName={nameFor(p.authorId)}
-                avatarUrl={byId.get(p.authorId)?.avatar_url ?? null}
+                avatarUrl={avatarUrlFor(p.authorId)}
                 onRetry={() => void retry(p.key)}
                 onDiscard={() => discard(p.key)}
               />
@@ -699,7 +698,7 @@ function Thread({
   onDiscard: (key: string) => void
 }) {
   const [selfOpen, setSelfOpen] = useState(false)
-  const { nameFor, byId } = useProfiles()
+  const { nameFor, avatarUrlFor } = useProfiles()
 
   // The hover Reply button opens the thread from outside this component, so
   // collapsing has to clear that too — otherwise `forceOpen` holds it open and
@@ -736,7 +735,7 @@ function Thread({
         <MessageGroupRow
           key={group.key}
           authorName={nameFor(group.authorId)}
-          avatarUrl={byId.get(group.authorId)?.avatar_url ?? null}
+          avatarUrl={avatarUrlFor(group.authorId)}
           messages={group.messages}
           attachmentsFor={attachmentsFor}
           signedUrlFor={signedUrlFor}
@@ -752,7 +751,7 @@ function Thread({
           key={p.key}
           pending={p}
           authorName={nameFor(p.authorId)}
-          avatarUrl={byId.get(p.authorId)?.avatar_url ?? null}
+          avatarUrl={avatarUrlFor(p.authorId)}
           onRetry={() => void onRetry(p.key)}
           onDiscard={() => onDiscard(p.key)}
         />

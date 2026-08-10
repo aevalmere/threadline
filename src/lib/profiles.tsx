@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 
 import { ProfilesContext, type ProfilesContextValue } from '@/lib/profiles-context'
 import { supabase, type Profile } from '@/lib/supabase'
+import { useSignedUrls } from '@/lib/useSignedUrls'
 
 /**
  * Every teammate's profile, fetched once and held for lookup.
@@ -17,6 +18,11 @@ import { supabase, type Profile } from '@/lib/supabase'
  */
 export function ProfilesProvider({ children }: { children: ReactNode }) {
   const [byId, setById] = useState<Map<string, Profile> | null>(null)
+
+  const refresh = useCallback(async () => {
+    const { data } = await supabase.from('profiles').select('*')
+    setById(new Map((data ?? []).map((p) => [p.id, p as Profile])))
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -34,6 +40,21 @@ export function ProfilesProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  /**
+   * Avatars live in the private bucket, so `avatar_url` is a path that has to
+   * be signed. Signing them here rather than at each render site means one
+   * batched request for the whole workspace — 5–30 paths — instead of one per
+   * message row, and the message list gets faces without knowing about storage.
+   */
+  const avatarPaths = useMemo(
+    () =>
+      [...(byId?.values() ?? [])]
+        .map((p) => p.avatar_url)
+        .filter((p): p is string => !!p),
+    [byId],
+  )
+  const signedUrlFor = useSignedUrls(avatarPaths)
+
   const nameFor = useCallback(
     (userId: string | null) => {
       if (!userId) return 'Unknown'
@@ -45,9 +66,24 @@ export function ProfilesProvider({ children }: { children: ReactNode }) {
     [byId],
   )
 
+  const avatarUrlFor = useCallback(
+    (userId: string | null) => {
+      if (!userId) return null
+      const path = byId?.get(userId)?.avatar_url
+      return path ? signedUrlFor(path) : null
+    },
+    [byId, signedUrlFor],
+  )
+
   const value = useMemo<ProfilesContextValue>(
-    () => ({ byId: byId ?? new Map(), loading: byId === null, nameFor }),
-    [byId, nameFor],
+    () => ({
+      byId: byId ?? new Map(),
+      loading: byId === null,
+      nameFor,
+      avatarUrlFor,
+      refresh,
+    }),
+    [byId, nameFor, avatarUrlFor, refresh],
   )
 
   return <ProfilesContext.Provider value={value}>{children}</ProfilesContext.Provider>

@@ -276,3 +276,72 @@ describe('mock realtime', () => {
     await mockSupabase.removeChannel(ch)
   })
 })
+
+/**
+ * The account surface (DECISIONS #14). These exist because the mock is the only
+ * thing standing behind offline sign-in, and because it deliberately reproduces
+ * one constraint — a taken username — so local mode cannot accept a state the
+ * database would refuse.
+ */
+describe('mock accounts', () => {
+  it('seeds profiles with usernames', async () => {
+    const { data } = await mockSupabase.from('profiles').select('*')
+    const names = (data as { username: string }[]).map((p) => p.username).sort()
+    expect(names).toEqual(['ethan', 'ethan.zhang50', 'you'])
+  })
+
+  it('resolves a username to an email, case-insensitively', async () => {
+    const { data } = await mockSupabase.rpc('email_for_username', { u: 'ETHAN' })
+    expect(data).toBe('ethan@localhost')
+  })
+
+  it('returns null for an unknown username, like the SQL', async () => {
+    const { data, error } = await mockSupabase.rpc('email_for_username', {
+      u: 'nobody',
+    })
+    expect(error).toBeNull()
+    expect(data).toBeNull()
+  })
+
+  it('signs in the profile the email names, whatever the password', async () => {
+    const { data, error } = await mockSupabase.auth.signInWithPassword({
+      email: 'ethan@localhost',
+      password: 'anything at all',
+    })
+    expect(error).toBeNull()
+    expect(data.session?.user.email).toBe('ethan@localhost')
+  })
+
+  it('refuses a username that does not exist', async () => {
+    const { error } = await mockSupabase.auth.signInWithPassword({
+      email: 'ghost@localhost',
+      password: 'x',
+    })
+    expect(error).not.toBeNull()
+  })
+
+  it('reproduces the unique username index on update — 23505', async () => {
+    const { data } = await mockSupabase.from('profiles').select('*')
+    const you = (data as { id: string; username: string }[]).find(
+      (p) => p.username === 'you',
+    )!
+    // Different case, to prove the check is case-insensitive like lower(username).
+    const { error } = await mockSupabase
+      .from('profiles')
+      .update({ username: 'ETHAN' })
+      .eq('id', you.id)
+    expect(error?.code).toBe('23505')
+  })
+
+  it('still allows a profile to keep its own username', async () => {
+    const { data } = await mockSupabase.from('profiles').select('*')
+    const you = (data as { id: string; username: string }[]).find(
+      (p) => p.username === 'you',
+    )!
+    const { error } = await mockSupabase
+      .from('profiles')
+      .update({ username: 'you', display_name: 'You Again' })
+      .eq('id', you.id)
+    expect(error).toBeNull()
+  })
+})

@@ -1,11 +1,13 @@
 import { FileTextIcon, HashIcon, KanbanIcon, MessagesSquareIcon } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
+import { AuthorAvatar } from '@/components/layout/AuthorAvatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { useChannels } from '@/lib/channels-context'
+import { useProfiles } from '@/lib/profiles-context'
 
 function navClass({ isActive }: { isActive: boolean }) {
   return cn(
@@ -19,6 +21,7 @@ function navClass({ isActive }: { isActive: boolean }) {
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { profile, signOut } = useAuth()
   const { chat, forum, loading, error } = useChannels()
+  const { avatarUrlFor } = useProfiles()
 
   return (
     <div className="bg-sidebar text-sidebar-foreground border-sidebar-border flex h-full flex-col border-r">
@@ -91,8 +94,21 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         )}
       </nav>
 
-      <div className="border-sidebar-border flex items-center justify-between gap-2 border-t px-3 py-3">
-        <span className="truncate text-sm">{profile?.display_name ?? '…'}</span>
+      <div className="border-sidebar-border flex items-center gap-2 border-t px-3 py-3">
+        <NavLink
+          to="/settings"
+          onClick={onNavigate}
+          className="hover:bg-sidebar-accent/60 flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1"
+        >
+          <AuthorAvatar
+            name={profile?.display_name ?? '?'}
+            url={avatarUrlFor(profile?.id ?? null)}
+            className="size-7"
+          />
+          <span className="min-w-0 flex-1 truncate text-sm">
+            {profile?.display_name ?? '…'}
+          </span>
+        </NavLink>
         <Button variant="ghost" size="sm" onClick={() => void signOut()}>
           Sign out
         </Button>

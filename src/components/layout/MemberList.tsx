@@ -15,7 +15,7 @@ import { useProfiles } from '@/lib/profiles-context'
  * workspace, no roles (SPEC §1.1).
  */
 export function MemberList() {
-  const { byId, loading } = useProfiles()
+  const { byId, loading, avatarUrlFor } = useProfiles()
   const { authorId } = useAuth()
 
   const members = useMemo(
@@ -39,8 +39,15 @@ export function MemberList() {
         <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-4">
           {members.map((m) => (
             <li key={m.id} className="flex items-center gap-2 rounded-md px-2 py-1.5">
-              <AuthorAvatar name={m.display_name} url={m.avatar_url} className="size-7" />
-              <span className="min-w-0 flex-1 truncate text-sm">{m.display_name}</span>
+              <AuthorAvatar
+                name={m.display_name}
+                url={avatarUrlFor(m.id)}
+                className="size-7"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm">{m.display_name}</p>
+                <p className="text-muted-foreground truncate text-xs">@{m.username}</p>
+              </div>
               {m.id === authorId && (
                 <span className="text-muted-foreground shrink-0 text-xs">you</span>
               )}

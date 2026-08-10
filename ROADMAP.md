@@ -34,7 +34,7 @@ One phase at a time. **A phase starts only after the user approves the previous 
 - [x] Database guard for the one-level-deep thread rule — `flatten_thread_root` trigger *(pulled forward from BACKLOG on Ethan's call; DECISIONS #8)*
 - [x] Uploads to Supabase Storage — 10 MB cap, inline image thumbnails
 - [x] Member list panel *(added on Ethan's call — @mentions need a way to see who is mentionable)*
-- [ ] **Account system** — invite-code registration, username + password sign-in, profile editing *(added 2026-08-10 on Ethan's call; replaces magic links, DECISIONS #14)*
+- [x] **Account system** — invite-code registration, username + password sign-in, profile editing *(added 2026-08-10 on Ethan's call; replaces magic links, DECISIONS #14)*
 - [ ] @mentions writing `notifications` rows *(keys on `username`, so it follows the account system)*
 - [ ] Unread badges via `last_read_message_id` *(batched writes — Non-negotiable 8)*
 - [ ] Reconnect-and-resync — `WHERE id > last_seen` on channel rejoin *(also clears a known gap: a send that succeeds after the user leaves the channel leaves a stuck "sending" bubble if its row falls outside the first page on return)*

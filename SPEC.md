@@ -280,3 +280,5 @@ The client then signs in normally. **Project-level signups stay disabled**, so t
 `AuthProvider` holds session state via `onAuthStateChange`; `RequireAuth` guards every app route.
 
 **Profile editing** — `/settings` changes display name, username and avatar. A taken username surfaces the unique-index `23505` as a readable error.
+
+Avatars live in the existing private `attachments` bucket under an `avatars/` prefix, capped at **2 MB** — well under the bucket's 10 MB, because an avatar is the one upload whose egress multiplies by the size of the team. `profiles.avatar_url` stores the storage path, and `ProfilesProvider` signs every avatar on screen in one batched request, so no render site touches storage. Replacing or removing an avatar deletes the old object, on the same reasoning as SPEC §1.3's message delete.

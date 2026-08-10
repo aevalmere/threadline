@@ -11,6 +11,7 @@ import Login from '@/routes/Login'
 import Register from '@/routes/Register'
 import RequireAuth from '@/routes/RequireAuth'
 import ResetPassword from '@/routes/ResetPassword'
+import Settings from '@/routes/Settings'
 import Tasks from '@/routes/Tasks'
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
               <Route path="/forums/:channelId" element={<Forums />} />
               <Route path="/docs" element={<Docs />} />
               <Route path="/tasks" element={<Tasks />} />
+              <Route path="/settings" element={<Settings />} />
             </Route>
           </Route>
 

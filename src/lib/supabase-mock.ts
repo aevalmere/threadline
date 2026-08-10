@@ -303,9 +303,28 @@ class Query implements PromiseLike<{ data: unknown; error: null | { message: str
         emit('INSERT', this.table, created)
       }
     } else if (this.op === 'update') {
-      for (const row of this.rows()) {
+      const patch = this.payload as Row
+      const targets = this.rows()
+
+      // Approximates profiles_username_lower_key so /settings cannot silently
+      // accept a taken username offline and then fail against the real
+      // database. Same reasoning as the channels index above: a mock that
+      // permits a state Postgres forbids sends you hunting for an app bug.
+      if (this.table === 'profiles' && typeof patch.username === 'string') {
+        const wanted = patch.username.toLowerCase()
+        const ids = new Set(targets.map((r) => String(r.id)))
+        const clash = db.profiles.some(
+          (p) =>
+            !ids.has(String(p.id)) && String(p.username ?? '').toLowerCase() === wanted,
+        )
+        if (clash) {
+          return { data: null, error: { message: 'duplicate key value', code: '23505' } }
+        }
+      }
+
+      for (const row of targets) {
         const before = { ...row }
-        Object.assign(row, this.payload as Row)
+        Object.assign(row, patch)
         result.push(row)
         emit('UPDATE', this.table, row, before)
       }
@@ -497,7 +516,17 @@ export const mockSupabase = {
      * No password is stored or checked offline — any password signs you in as
      * whoever the username names. Same caveat as the invite code above.
      */
-    signInWithPassword: async ({ email }: { email: string }) => {
+    signInWithPassword: async ({
+      email,
+      password,
+    }: {
+      email: string
+      password: string
+    }) => {
+      // Accepted and ignored — there is nothing offline to compare it against.
+      // Declared anyway so the mock's shape matches the real client's, which is
+      // what lets every caller above the boundary stay unchanged.
+      void password
       const username = email.split('@')[0]?.toLowerCase() ?? ''
       const who = (db.profiles ?? []).find(
         (p) => String(p.username ?? '').toLowerCase() === username,
