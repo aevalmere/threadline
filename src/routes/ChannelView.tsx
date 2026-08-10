@@ -30,7 +30,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatBytes, isImage, validateFile, type Attachment } from '@/lib/attachments'
+import {
+  formatBytes,
+  isImage,
+  isPlayable,
+  isVideo,
+  validateFile,
+  type Attachment,
+} from '@/lib/attachments'
 import { useAuth } from '@/lib/auth-context'
 import { useChannels } from '@/lib/channels-context'
 import { groupMessages } from '@/lib/grouping'
@@ -534,6 +541,19 @@ function AttachmentView({
             className="max-h-64 rounded-md border object-contain"
           />
         </button>
+      ) : isVideo(attachment.mime) ? (
+        // Native controls, not a library: they already give play/pause,
+        // scrubbing, volume, fullscreen, picture-in-picture and playback rate,
+        // and a player library would be a locked-stack addition (Non-negotiable
+        // 3) for no gain. preload="metadata" keeps the poster frame and
+        // duration without pulling the whole file down the free tier's egress.
+        <video
+          src={url}
+          controls
+          playsInline
+          preload="metadata"
+          className="max-h-64 rounded-md border"
+        />
       ) : (
         <button
           type="button"
@@ -575,29 +595,55 @@ function Preview({
   item: PreviewItem | null
   onClose: () => void
 }) {
-  const isPdf = item?.attachment.mime === 'application/pdf'
+  const mime = item?.attachment.mime
+  const isPdf = mime === 'application/pdf'
+  // Media sizes the dialog; a PDF has no natural size worth honouring, so it
+  // gets a large fixed frame instead.
+  const fitsMedia = isPlayable(mime)
+
   return (
     <Dialog open={item !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-[90vw] sm:max-w-4xl">
-        <DialogHeader>
-          <DialogTitle className="truncate pr-8 text-base">
+      <DialogContent
+        className={cn(
+          // w-full and sm:max-w-lg are baked into DialogContent, so both have
+          // to be beaten for the box to shrink to its contents.
+          'flex max-h-[92vh] flex-col gap-3 overflow-hidden',
+          fitsMedia
+            ? 'w-auto max-w-[95vw] p-3 sm:max-w-[95vw]'
+            : 'w-full max-w-[95vw] sm:max-w-4xl',
+        )}
+      >
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="truncate pr-8 text-sm font-medium">
             {item?.attachment.filename}
           </DialogTitle>
         </DialogHeader>
 
         {item && (
-          <div className="flex max-h-[70vh] min-h-0 justify-center overflow-auto">
-            {isImage(item.attachment.mime) ? (
+          <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto">
+            {isImage(mime) ? (
               <img
                 src={item.url}
                 alt={item.attachment.filename}
-                className="max-h-[70vh] object-contain"
+                // Bounded by the viewport but never upscaled past its own
+                // pixels, so a small screenshot stays small instead of being
+                // blown up and blurry.
+                className="max-h-[80vh] max-w-full rounded-md object-contain"
+                style={{ width: 'auto', height: 'auto' }}
+              />
+            ) : isVideo(mime) ? (
+              <video
+                src={item.url}
+                controls
+                autoPlay
+                playsInline
+                className="max-h-[80vh] max-w-full rounded-md"
               />
             ) : isPdf ? (
               <iframe
                 src={item.url}
                 title={item.attachment.filename}
-                className="h-[70vh] w-full rounded-md border"
+                className="h-[80vh] w-full rounded-md border"
               />
             ) : (
               <div className="py-8 text-center">
@@ -617,7 +663,7 @@ function Preview({
             download={item.attachment.filename}
             target="_blank"
             rel="noreferrer"
-            className="text-primary text-sm hover:underline"
+            className="text-primary shrink-0 text-sm hover:underline"
           >
             Download
           </a>

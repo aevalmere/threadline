@@ -75,6 +75,24 @@ export function isImage(mime: string | null | undefined): boolean {
   return /^image\/(png|jpeg|jpg|gif|webp|avif|svg\+xml)$/i.test(mime.trim())
 }
 
+/**
+ * Videos a browser can play back natively.
+ *
+ * Deliberately a short list rather than `video/*`: rendering a <video> for a
+ * format the browser cannot decode gives a dead black box with no explanation,
+ * where the file chip at least offers a download. mkv and avi are the common
+ * ones that fail.
+ */
+export function isVideo(mime: string | null | undefined): boolean {
+  if (!mime) return false
+  return /^video\/(mp4|webm|ogg|quicktime)$/i.test(mime.trim())
+}
+
+/** Renders in place rather than as a download chip. */
+export function isPlayable(mime: string | null | undefined): boolean {
+  return isImage(mime) || isVideo(mime)
+}
+
 /** Group attachment rows for joining onto the messages they belong to. */
 export function attachmentsByOwner<T extends { owner_type: string; owner_id: string }>(
   rows: readonly T[],

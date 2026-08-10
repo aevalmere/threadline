@@ -5,6 +5,8 @@ import {
   extensionOf,
   formatBytes,
   isImage,
+  isPlayable,
+  isVideo,
   MAX_UPLOAD_BYTES,
   storagePathFor,
   validateFile,
@@ -120,6 +122,36 @@ describe('isImage', () => {
     expect(isImage(null)).toBe(false)
     expect(isImage(undefined)).toBe(false)
     expect(isImage('')).toBe(false)
+  })
+})
+
+describe('isVideo', () => {
+  it('recognises formats browsers actually decode', () => {
+    for (const m of ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime']) {
+      expect(isVideo(m)).toBe(true)
+    }
+  })
+
+  it('rejects containers that would render a dead black box', () => {
+    // A <video> for these decodes to nothing and offers the user no way out;
+    // the file chip at least downloads.
+    expect(isVideo('video/x-matroska')).toBe(false)
+    expect(isVideo('video/x-msvideo')).toBe(false)
+  })
+
+  it('is not confused by images or missing mimes', () => {
+    expect(isVideo('image/png')).toBe(false)
+    expect(isVideo(null)).toBe(false)
+    expect(isVideo(undefined)).toBe(false)
+  })
+})
+
+describe('isPlayable', () => {
+  it('covers images and videos, nothing else', () => {
+    expect(isPlayable('image/png')).toBe(true)
+    expect(isPlayable('video/mp4')).toBe(true)
+    expect(isPlayable('application/pdf')).toBe(false)
+    expect(isPlayable(null)).toBe(false)
   })
 })
 
