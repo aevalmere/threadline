@@ -23,7 +23,9 @@ Optimize every decision for: **shipping on time > low maintenance > $0/mo hostin
 
 ## Non-goals — hard NO for v1
 
-No billing. No roles/permissions (one trusted workspace; auth is the only wall). No native mobile apps (responsive web only). No voice/video. No collaborative co-editing (no Yjs/CRDT). No email digests or push notifications (in-app bell only). No read receipts, edit history, custom emoji, per-channel notification prefs, kanban automations, backlink graph visualization, or external search service.
+No billing. No roles/permissions (one trusted workspace; auth is the only wall). No native mobile apps (responsive web only). No voice/video. No collaborative co-editing (no Yjs/CRDT). No email digests. No read receipts, edit history, custom emoji, per-channel notification prefs, kanban automations, backlink graph visualization, or external search service.
+
+**Partially reversed — push notifications.** The bell fires a browser `Notification` when the tab is hidden, at Ethan's explicit request; **DECISIONS #16** and SPEC §1.9 record it. That is the `Notification` API from the running page — the tab must be open, so there is no service worker, no push service, and no server→device path. *Real* push is still a hard no. Do not "fix" `new Notification(...)` in `NotificationBell.tsx` back out.
 
 **If the user asks for any of these mid-build: remind them of the ship date and append it to `BACKLOG.md` instead.**
 

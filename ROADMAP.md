@@ -35,7 +35,8 @@ One phase at a time. **A phase starts only after the user approves the previous 
 - [x] Uploads to Supabase Storage — 10 MB cap, inline image thumbnails
 - [x] Member list panel *(added on Ethan's call — @mentions need a way to see who is mentionable)*
 - [x] **Account system** — invite-code registration, username + password sign-in, profile editing *(added 2026-08-10 on Ethan's call; replaces magic links, DECISIONS #14)*
-- [ ] @mentions writing `notifications` rows *(keys on `username`, so it follows the account system)*
+- [x] @mentions writing `notifications` rows *(keys on `username`, so it follows the account system)*
+- [x] **Notification bell** — panel, mark-read, in-app toast, and a browser notification when the tab is hidden *(pulled forward from P5 on Ethan's call; DECISIONS #16)*
 - [ ] Unread badges via `last_read_message_id` *(batched writes — Non-negotiable 8)*
 - [ ] Reconnect-and-resync — `WHERE id > last_seen` on channel rejoin *(also clears a known gap: a send that succeeds after the user leaves the channel leaves a stuck "sending" bubble if its row falls outside the first page on return)*
 - [ ] Infinite-scroll pagination, 50/page
@@ -88,7 +89,7 @@ One phase at a time. **A phase starts only after the user approves the previous 
 
 - [ ] ⌘K unified search calling `search_all` — grouped results, jump-to-entity
 - [ ] `search_tsv` + GIN on `posts`, `pages`, `tasks` *(`messages` already has it from P0)*
-- [ ] In-app notification bell — mentions, assignments, replies — with mark-read
+- [x] ~~In-app notification bell — mentions, assignments, replies — with mark-read~~ **shipped in P1** (DECISIONS #16). What remains here: `assignment` notifications, which need P2's `tasks` table.
 - [ ] Vitest: search query builder
 
 **GATE G5** — One search box finds a phrase from a week-old chat message, a task by title, and a doc by heading text · bell shows a mention within seconds.

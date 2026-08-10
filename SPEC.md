@@ -60,7 +60,11 @@ The task then renders a "from #channel" chip that jumps to the exact message. Sa
 
 ### 1.9 Notifications
 
-In-app bell only. Rows are written for three kinds: `mention` (an @mention in a message), `assignment` (a task assigned to you), `reply` (a reply in a thread you started). `read_at` marks read. No email, no push (non-goals).
+Rows are written for three kinds: `mention` (an @mention in a message), `assignment` (a task assigned to you), `reply` (a reply in a thread you started). `read_at` marks read. **No email** (non-goal).
+
+Rows are written by the **sender's client**, not a trigger — see DECISIONS #15. Mentions resolve on `username`, which is unique; display names are not and never resolve a mention.
+
+The bell shipped in **P1**, not P5 (DECISIONS #16). One arrival produces exactly one surface: an in-app toast when the tab is visible, a **browser notification when it is hidden**. That second one deviates from the "push notifications" non-goal and was Ethan's explicit call. It is the `Notification` API fired by the running page — the tab must be open, backgrounded is fine, closed delivers nothing. There is no service worker and no push service, so no server→device path exists. Real push remains out.
 
 ### 1.10 Search
 
@@ -215,7 +219,7 @@ The bucket is **private**. Reads go through short-lived signed URLs, so an uploa
 `id uuid pk`, `source_type text`, `source_id text`, `target_type text`, `target_id text`, `kind text`, `created_at timestamptz default now()`.
 **Index on `(target_type, target_id)`** — this is what makes the backlink panel one query.
 
-#### `notifications` — P1 (rows) / P5 (bell UI)
+#### `notifications` — P1 (rows **and** bell UI — pulled forward, DECISIONS #16)
 `id uuid pk`, `user_id uuid → profiles on delete cascade`, `kind text check in ('mention','assignment','reply')`, `actor_id uuid → profiles`, `entity_type text`, `entity_id text`, `read_at timestamptz`, `created_at timestamptz default now()`. Index on `(user_id, read_at)`.
 
 ---

@@ -378,7 +378,7 @@ async function notificationsCheck(anon: SupabaseClient): Promise<ProbeResult[]> 
   })
 
   if (!ins.data) {
-    for (const verb of ['notif read', 'notif kind', 'notif delete']) {
+    for (const verb of ['notif read', 'notif kind', 'notif read_at', 'notif delete']) {
       out.push({ verb, ok: false, detail: 'skipped — insert failed' })
     }
     return out
@@ -410,6 +410,35 @@ async function notificationsCheck(anon: SupabaseClient): Promise<ProbeResult[]> 
       bad.error?.code === '23514'
         ? 'an unknown kind was rejected (23514)'
         : `unknown kind accepted — ${bad.error?.message ?? 'no error'}`,
+  })
+
+  // Mark-read: the bell's only write, and the reason `read_at` exists.
+  // Scoped `.is('read_at', null)` exactly as the client does, then repeated —
+  // the second call must affect zero rows, proving the scope really does stop
+  // a re-read from overwriting when you first saw something.
+  const readAt = new Date().toISOString()
+  const upd = await anon
+    .from('notifications')
+    .update({ read_at: readAt })
+    .eq('id', ins.data.id)
+    .is('read_at', null)
+    .select('id')
+  const again = await anon
+    .from('notifications')
+    .update({ read_at: new Date().toISOString() })
+    .eq('id', ins.data.id)
+    .is('read_at', null)
+    .select('id')
+  const markedOnce = (upd.data?.length ?? 0) === 1 && (again.data?.length ?? 0) === 0
+  out.push({
+    verb: 'notif read_at',
+    ok: !upd.error && !again.error && markedOnce,
+    detail:
+      upd.error?.message ??
+      again.error?.message ??
+      (markedOnce
+        ? 'marked read once; a second mark-read touched 0 rows'
+        : `expected 1 then 0 rows, got ${upd.data?.length ?? 0} then ${again.data?.length ?? 0}`),
   })
 
   const del = await anon

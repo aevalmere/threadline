@@ -8,6 +8,7 @@ import { AppShellSearchHint } from '@/components/layout/SearchHint'
 import { CommandPalette } from '@/components/layout/CommandPalette'
 import { CurrentChannelTitle } from '@/components/layout/CurrentChannelTitle'
 import { MemberList } from '@/components/layout/MemberList'
+import { NotificationBell } from '@/components/layout/NotificationBell'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { ChannelsProvider } from '@/lib/channels'
 import { ProfilesProvider } from '@/lib/profiles'
@@ -62,6 +63,8 @@ export default function AppShell() {
                 </span>
                 <span className="sr-only">Search</span>
               </button>
+
+              <NotificationBell />
 
               <Button
                 variant="ghost"

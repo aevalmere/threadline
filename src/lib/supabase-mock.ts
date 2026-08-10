@@ -20,6 +20,15 @@
  * Rows persist in localStorage; **uploaded files live in memory only** and are
  * gone on reload, because a 10 MB file base64'd into localStorage would blow
  * its ~5 MB quota on the first upload.
+ *
+ * Two things it deliberately does not check, because the answer lives on the
+ * server: the **invite code** (the secret is in the Edge Function) and the
+ * **password** (any password signs you in as whoever the username names). See
+ * DECISIONS #14.
+ *
+ * That second gap is also how the bell is testable offline. Mentioning someone
+ * never notifies *you* — so to see a notification, mention `@ethan` as `you`,
+ * sign out, and sign back in as `ethan` with any password at all.
  */
 
 /**
@@ -29,8 +38,9 @@
  * v2 dropped the leftover `Guest` profile from the reverted guest mode.
  * v3 added `username`, without which sign-in and mentions have nothing to
  * resolve and every profile renders as a teammate the app cannot name.
+ * v4 added the `notifications` table for the bell.
  */
-const STORAGE_KEY = 'threadline.mock.v3'
+const STORAGE_KEY = 'threadline.mock.v4'
 
 type Row = Record<string, unknown>
 type Tables = Record<string, Row[]>
@@ -113,6 +123,7 @@ function seed(): Tables {
     ],
     messages: [],
     attachments: [],
+    notifications: [],
   }
 }
 
@@ -160,6 +171,7 @@ const COLUMN_DEFAULTS: Record<string, Row> = {
   profiles: { avatar_url: null },
   channel_members: { last_read_message_id: null },
   attachments: { mime: null, size_bytes: null },
+  notifications: { actor_id: null, read_at: null },
 }
 
 /** messages.id is a bigint identity; everything else is a uuid. */
@@ -224,6 +236,13 @@ class Query implements PromiseLike<{ data: unknown; error: null | { message: str
   }
   lt(col: string, val: unknown) {
     this.filters.push((r) => Number(r[col]) < Number(val))
+    return this
+  }
+  is(col: string, val: unknown) {
+    // Only `.is(col, null)` is used — by the bell's mark-read, which scopes its
+    // update to unread rows so it cannot rewrite `read_at` on rows already
+    // read. Without this the mock would mark everything read twice over.
+    this.filters.push((r) => (val === null ? r[col] == null : r[col] === val))
     return this
   }
   not(col: string, op: string, val: unknown) {

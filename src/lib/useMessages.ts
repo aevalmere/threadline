@@ -62,6 +62,17 @@ export function useMessages(channelId: string | undefined) {
   const { byId: profilesById } = useProfiles()
 
   const [messages, setMessages] = useState<Message[]>([])
+  /**
+   * Which channel the rows in `messages` actually belong to.
+   *
+   * Not the same as `channelId`. `/channels/:channelId` renders the same
+   * element for every id, so a channel switch re-renders without remounting and
+   * there is a window where `channelId` is already the new channel while
+   * `messages` still holds the old one's rows. Anything deciding "is the thing
+   * I am looking for absent, or merely not here yet" has to ask this instead —
+   * see `resolveJump`.
+   */
+  const [loadedChannelId, setLoadedChannelId] = useState<string | undefined>()
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [pending, setPending] = useState<PendingMessage[]>([])
   const [loading, setLoading] = useState(true)
@@ -136,6 +147,7 @@ export function useMessages(channelId: string | undefined) {
     setLoading(true)
     setError(null)
     setMessages([])
+    setLoadedChannelId(undefined)
     setAttachments([])
 
     const q = pageQuery(channelId)
@@ -161,6 +173,7 @@ export function useMessages(channelId: string | undefined) {
       // by id, so the newest-first wire order lands correctly regardless.
       const rows = (data ?? []) as Message[]
       absorb(rows)
+      setLoadedChannelId(channelId)
       setLoading(false)
 
       // Attachments for the page just loaded. A separate query rather than a
@@ -563,6 +576,7 @@ export function useMessages(channelId: string | undefined) {
 
   return {
     messages,
+    loadedChannelId,
     attachmentsByMessage,
     pending: visiblePending,
     loading,

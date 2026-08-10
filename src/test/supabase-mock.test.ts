@@ -345,3 +345,54 @@ describe('mock accounts', () => {
     expect(error).toBeNull()
   })
 })
+
+/**
+ * `.is(col, null)` — added for the bell's mark-read, which scopes its update to
+ * unread rows so it cannot overwrite when you first saw something. Covered here
+ * because DECISIONS #12 is explicit that the query builder is the part of the
+ * mock worth testing.
+ */
+describe('mock .is()', () => {
+  it('matches only rows whose column is null, and updates them once', async () => {
+    const { data: made } = await mockSupabase
+      .from('notifications')
+      .insert({
+        user_id: 'u1',
+        kind: 'mention',
+        actor_id: 'u2',
+        entity_type: 'message',
+        entity_id: '__is_probe',
+      })
+      .select('*')
+      .single()
+    const row = made as { id: string; read_at: string | null }
+    // COLUMN_DEFAULTS must give it a real null, not undefined.
+    expect(row.read_at).toBeNull()
+
+    const first = await mockSupabase
+      .from('notifications')
+      .update({ read_at: '2026-08-10T00:00:00.000Z' })
+      .eq('id', row.id)
+      .is('read_at', null)
+      .select('id')
+    expect((first.data as unknown[]).length).toBe(1)
+
+    // Already read — the scope must now match nothing.
+    const second = await mockSupabase
+      .from('notifications')
+      .update({ read_at: '2026-08-11T00:00:00.000Z' })
+      .eq('id', row.id)
+      .is('read_at', null)
+      .select('id')
+    expect((second.data as unknown[]).length).toBe(0)
+
+    const { data: after } = await mockSupabase
+      .from('notifications')
+      .select('read_at')
+      .eq('id', row.id)
+      .single()
+    expect((after as { read_at: string }).read_at).toBe('2026-08-10T00:00:00.000Z')
+
+    await mockSupabase.from('notifications').delete().eq('id', row.id)
+  })
+})

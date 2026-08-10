@@ -629,3 +629,120 @@ it reappeared the moment a probe ran against a table the seed does not populate.
   snippets will show the stored form instead. A product call, revisit if it bites.
 - No UPDATE probe on `notifications` yet; `read_at` is the bell's only write and
   it lands with the bell UI.
+
+---
+
+## #16 — 2026-08-10 — The bell is pulled forward to P1, and it fires OS notifications
+
+**Two deviations from settled files, both Ethan's call, both recorded here because
+the code was written before this entry was — which Non-negotiable 4 forbids and
+the reviewer caught.**
+
+### The bell moves from P5 to P1
+
+`ROADMAP.md` P5 owned "In-app notification bell — mentions, assignments, replies
+— with mark-read". It ships in P1 instead, alongside the mentions that write its
+rows. `ROADMAP.md` and `SPEC.md` §2.3 are updated to match.
+
+**Why.** Rows nobody can read are a feature that does nothing, and G1 cannot
+check "a mention reaches the other person" without a surface that shows it. The
+alternative was writing the mention path in P1 and revisiting the same function
+in P5. Same argument as DECISIONS #8's pull-forward of the thread trigger.
+
+`assignment` notifications still wait for P2's `tasks` table, so P5 keeps that
+slice plus the search box.
+
+### OS notifications, against an explicit non-goal
+
+`BACKLOG.md` lists "Email digests, push notifications" as a hard v1 non-goal, and
+SPEC §1.9 said "In-app bell only". A browser `Notification` now fires **when the
+tab is hidden**, in place of the in-app toast.
+
+**Ethan asked for it directly** when choosing how a mention should behave, having
+been shown that it deviates from the non-goal. That is his call, and this entry
+is what makes it a decision rather than drift. An earlier version of this feature
+argued the point in a code comment instead — re-litigating a settled decision
+from memory, exactly what Non-negotiable 4 exists to stop.
+
+**What it is, precisely, so nobody mistakes it for push.** It is the
+`Notification` API, fired by the running page. It requires the tab to be **open**;
+backgrounded is fine, closed delivers nothing. There is no service worker and no
+push service, so there is no server → device path. Real push — the thing the
+non-goal names — would need both, and stays out.
+
+**Consequences.**
+- Permission is requested only from a real click, offered only while
+  `Notification.permission === 'default'`. A browser rejects a request without a
+  gesture, and `denied` cannot be re-prompted.
+- Exactly one surface per arrival: hidden tab → OS notification, visible tab →
+  in-app toast. Never both.
+- The announcement waits for the target message to load, so the notification body
+  is the message text and not an empty string.
+
+**Reverting is small** if it proves annoying: delete the `document.hidden` branch
+and `DesktopPermission` from `NotificationBell.tsx`. The toast is then the only
+surface and nothing else changes.
+
+---
+
+## #17 — 2026-08-10 — Jump-to-message: two failures, and the invariant that ends them
+
+**Written because Non-negotiable 6 fired** — the same bug shipped wrong twice —
+and because the reasoning had been put in code comments instead. #16 criticised
+exactly that, and then it happened again: comments in `ChannelView.tsx` did not
+stop attempt two from re-breaking it, because a fresh session reads this file,
+not an effect's docblock.
+
+**The feature.** Clicking a notification navigates to
+`/channels/:channelId?m=<messageId>`, and the channel view scrolls to that
+message and flashes it.
+
+**Attempt 1 — the reply case.** The effect looked the message up with
+`getElementById` and bailed if it was missing. But a reply is only rendered
+inside an **expanded thread**, so every `reply` notification — and every mention
+written inside a reply — pointed at an element that did not exist. Worse, the
+bail happened before the parameter was cleared, so `?m=` stayed in the URL and
+the effect re-fired on every subsequent message.
+
+**Attempt 2 — the cross-channel case, which was worse.** The fix cleared the
+parameter unconditionally. But `/channels/:channelId` renders the same element
+for every id, so navigating **between** channels re-renders without remounting:
+for one commit `channelId` is already the new channel while `messages` still
+holds the old channel's rows and `loading` is still `false`. The parameter was
+therefore consumed before the target could possibly exist. The previous bug at
+least retried; this one threw the jump away silently, and it broke the *common*
+path — a notification almost always points at another channel.
+
+**Why an effect could not get this right.** Both failures are the same mistake:
+treating "not in `messages`" as "absent" when it can also mean "not here yet".
+An effect cannot tell those apart, because nothing in its inputs says which
+channel the rows in hand came from.
+
+**The fix — say which page you are holding.** `useMessages` now exposes
+**`loadedChannelId`**: the channel whose page is actually in `messages`. It is
+cleared to `undefined` the instant the channel changes and set only inside the
+load's `.then()`, after the rows land and behind the `active` guard. So it can
+never label the previous channel's page as the current one.
+
+`src/lib/jump.ts`'s `resolveJump()` then makes the decision as pure, tested code
+returning `idle | wait | miss | hit`, and **the invariant is: only `hit` and
+`miss` may clear `?m=`.** `wait` must preserve it. A third attempt that
+reintroduces either bug has to violate that sentence to do it.
+
+`hit` also carries `openThread`, the root to expand when the target is a reply —
+attempt 1's failure, encoded in the return type rather than remembered.
+
+**Known limits, accepted.**
+- If the channel's page **fails to load**, `loadedChannelId` stays `undefined`,
+  `resolveJump` answers `wait` forever and the parameter never clears. No loop,
+  the error banner shows, and navigating away clears it. Degraded and visible,
+  which is the right failure for a jump.
+- Still bounded by the loaded page: a message older than the first page is a
+  `miss`. Pagination is a later P1 item, and the durable answer is BACKLOG's
+  deep-linkable thread pages — which P2's create-task-from-message jump needs
+  anyway.
+- **`loadedChannelId`'s own lifecycle is not covered by a test.** There is no
+  React test harness in the project, so deleting the clear-on-switch line would
+  reintroduce the regression with all of `jump.test.ts` still green. The pure
+  decision is pinned; the wiring around it is not. Stated so it is a known gap
+  rather than a false sense of coverage.

@@ -17,7 +17,8 @@ Hard NO for v1. Listed so a future session doesn't mistake their absence for an 
 | Native mobile apps | Responsive web only. |
 | Voice / video | |
 | Collaborative co-editing (Yjs / CRDT) | P4 ships a soft edit-lock banner instead. |
-| Email digests, push notifications | In-app bell only. |
+| Email digests | No email of any kind. |
+| ~~Push notifications~~ | **Partially reversed — DECISIONS #16.** The bell fires a browser `Notification` when the tab is hidden, at Ethan's request. That needs the tab *open*, so it is not push: no service worker, no push service, no server→device path. Real push is still out. |
 | Read receipts | |
 | Edit history | Messages keep `edited_at`, not versions. |
 | Custom emoji | |

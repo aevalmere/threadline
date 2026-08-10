@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
@@ -9,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 
 import {
   MessageSquareIcon,
@@ -41,6 +42,7 @@ import {
 import { useAuth } from '@/lib/auth-context'
 import { useChannels } from '@/lib/channels-context'
 import { groupMessages } from '@/lib/grouping'
+import { resolveJump } from '@/lib/jump'
 import { useProfiles } from '@/lib/profiles-context'
 import {
   applyMention,
@@ -76,11 +78,13 @@ export interface MessageActions {
 
 export default function ChannelView() {
   const { channelId } = useParams<{ channelId: string }>()
+  const [params, setParams] = useSearchParams()
   const { channels, loading: channelsLoading } = useChannels()
   const { nameFor, avatarUrlFor } = useProfiles()
   const { authorId } = useAuth()
   const {
     messages,
+    loadedChannelId,
     attachmentsByMessage,
     pending,
     loading,
@@ -140,6 +144,86 @@ export default function ChannelView() {
     const el = listRef.current
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
   }, [messages, pending])
+
+  /**
+   * `?m=<id>` — where a notification lands you.
+   *
+   * Two effects, and they have to be separate. This one decides, via
+   * `resolveJump`, whether to consume the parameter at all; the one below does
+   * the scrolling, once the target row is actually in the DOM.
+   *
+   * The decision is pure and tested because two of its three outcomes were
+   * shipped wrong. A reply is only rendered inside an expanded thread, so
+   * `reply` notifications pointed at an element that did not exist — hence
+   * `openThread`. And a notification for a *different* channel re-renders this
+   * component with the new id while the previous channel's rows are still in
+   * hand, so consuming the parameter there throws it away before the target
+   * could exist. Both are cases an effect cannot distinguish from "genuinely
+   * absent" without being told which page it is holding.
+   */
+  const jumpTo = params.get('m')
+  const [flash, setFlash] = useState<number | null>(null)
+
+  useEffect(() => {
+    const decision = resolveJump({
+      jumpTo,
+      loading,
+      loadedChannelId,
+      channelId,
+      messages,
+    })
+
+    // `wait` is the case that matters and the one an effect cannot see from the
+    // inside: clicking a notification for another channel re-renders this
+    // component with the new id while the old channel's rows are still in hand.
+    // Clearing the parameter there would consume it before the target could
+    // possibly exist. `resolveJump` and its tests own that distinction.
+    if (decision.status === 'idle' || decision.status === 'wait') return
+
+    if (decision.status === 'hit') {
+      // A reply only exists in the DOM once its thread is expanded.
+      if (decision.openThread !== null) setOpenThread(decision.openThread)
+      setFlash(decision.id)
+    }
+
+    // Both `hit` and `miss` consume it, so a message outside the loaded page
+    // fails quietly instead of retrying on every new message.
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        next.delete('m')
+        return next
+      },
+      { replace: true },
+    )
+  }, [jumpTo, loading, loadedChannelId, channelId, messages, setParams])
+
+  /**
+   * Scroll to the flashed message and highlight it briefly.
+   *
+   * Keyed on `flash` and `openThread`, so it re-runs once an expanded thread
+   * has rendered the row. The highlight is removed in the cleanup rather than
+   * only in the timer: an earlier version cancelled its own timeout — clearing
+   * `?m=` changed the dependency, React ran the cleanup, and the class stayed
+   * on that message for the life of the list.
+   */
+  useEffect(() => {
+    if (flash === null) return
+    const el = document.getElementById(`message-${flash}`)
+    if (!el) return
+
+    // The user asked for a specific message, so an arriving one must not yank
+    // them back to the bottom.
+    stickToBottom.current = false
+    el.scrollIntoView({ block: 'center' })
+    el.classList.add('bg-primary/10')
+
+    const t = setTimeout(() => setFlash(null), 1600)
+    return () => {
+      clearTimeout(t)
+      el.classList.remove('bg-primary/10')
+    }
+  }, [flash, openThread])
 
   const channel = channels?.find((c) => c.id === channelId)
 
@@ -386,7 +470,11 @@ function MessageRow({
   const [editing, setEditing] = useState(false)
 
   return (
-    <div className="group hover:bg-accent/40 relative -mx-2 rounded-md px-2 py-0.5 transition-colors focus-within:bg-accent/40">
+    <div
+      // The anchor a notification's `?m=` jumps to and flashes.
+      id={`message-${message.id}`}
+      className="group hover:bg-accent/40 relative -mx-2 rounded-md px-2 py-0.5 transition-colors focus-within:bg-accent/40"
+    >
       {editing ? (
         <EditBox
           initial={message.body}
