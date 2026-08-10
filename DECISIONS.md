@@ -538,9 +538,22 @@ derived from the email. `20260810131038_tighten_username_format.sql` closes it,
 as a new migration rather than an edit. `format trail` in the seed is the
 regression test.
 
+**Verified end to end on 2026-08-10**, against the live project, through the
+anon client with no session — what a browser actually does. Ten assertions, all
+passing: a wrong invite code is refused (403), the right one creates the account
+(200) with the chosen username *and* display name on the profile, a repeat
+username is refused (409), a trailing-dot username is refused by the function
+rather than silently slugged (400), sign-in by username resolves and succeeds,
+that session reads the workspace, a wrong password fails, and the pre-existing
+magic-link-era account signs in with a newly set password. Probe accounts were
+deleted afterwards.
+
 **Known limits, accepted.**
-- No rate limiting of our own on the register function beyond the platform's, so
-  the invite code must be long and random. Rotating it is one `secrets set`.
+- The invite code is short and human-shareable (Ethan's call: it exists to keep
+  strangers out, not to protect anything by itself). That makes the
+  no-rate-limiting note below matter more than it would for a random 32-char
+  string. Rotating it is one `secrets set`, and the value never enters the repo.
+- No rate limiting of our own on the register function beyond the platform's.
 - The username format rule lives in three places — `slugify_username()` plus the
   CHECK constraint in the database, the client, and a re-check in the Edge
   Function. The database is the wall; the other two exist for instant errors. A
