@@ -14,6 +14,7 @@ import { useParams } from 'react-router-dom'
 import {
   MessageSquareIcon,
   PaperclipIcon,
+  PencilIcon,
   SendIcon,
   Trash2Icon,
   XIcon,
@@ -57,6 +58,7 @@ export interface MessageActions {
   onReply: (message: Message) => void
   onRequestDelete: (message: Message) => void
   deleteAttachment: (attachment: Attachment) => Promise<void>
+  editMessage: (id: number, body: string) => Promise<void>
 }
 
 export default function ChannelView() {
@@ -75,6 +77,7 @@ export default function ChannelView() {
     discard,
     deleteMessage,
     deleteAttachment,
+    editMessage,
     dismissError,
   } = useMessages(channelId)
 
@@ -92,6 +95,7 @@ export default function ChannelView() {
     onReply: (message) => setOpenThread(threadRootFor(message)),
     onRequestDelete: (message) => setConfirmDelete(message),
     deleteAttachment,
+    editMessage,
   }
 
   // Without an author id nothing can be written — messages.author_id is not
@@ -375,10 +379,22 @@ function MessageRow({
   children?: ReactNode
 }) {
   const deleted = message.deleted_at != null
+  const [editing, setEditing] = useState(false)
 
   return (
     <div className="group hover:bg-accent/40 relative -mx-2 rounded-md px-2 py-0.5 transition-colors focus-within:bg-accent/40">
-      <MessageBody message={message} />
+      {editing ? (
+        <EditBox
+          initial={message.body}
+          onCancel={() => setEditing(false)}
+          onSave={async (body) => {
+            await actions.editMessage(message.id, body)
+            setEditing(false)
+          }}
+        />
+      ) : (
+        <MessageBody message={message} />
+      )}
 
       {!deleted &&
         attachments.map((a) => (
@@ -393,7 +409,7 @@ function MessageRow({
 
       {children}
 
-      {!deleted && (
+      {!deleted && !editing && (
         <div className="bg-background absolute -top-3 right-1 hidden items-center gap-0.5 rounded-md border p-0.5 shadow-sm group-hover:flex group-focus-within:flex">
           <Button
             variant="ghost"
@@ -407,6 +423,15 @@ function MessageRow({
           <Button
             variant="ghost"
             size="icon"
+            className="size-7"
+            onClick={() => setEditing(true)}
+          >
+            <PencilIcon className="size-3.5" />
+            <span className="sr-only">Edit message</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             className="text-destructive hover:text-destructive size-7"
             onClick={() => actions.onRequestDelete(message)}
           >
@@ -415,6 +440,67 @@ function MessageRow({
           </Button>
         </div>
       )}
+    </div>
+  )
+}
+
+/** Inline editor. Enter saves, Escape cancels, Shift+Enter is a newline. */
+function EditBox({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial: string
+  onSave: (body: string) => Promise<void>
+  onCancel: () => void
+}) {
+  const [value, setValue] = useState(initial)
+  const [saving, setSaving] = useState(false)
+
+  const unchanged = value.trim() === initial.trim()
+  const empty = value.trim().length === 0
+
+  async function save() {
+    if (saving || empty) return
+    if (unchanged) return onCancel()
+    setSaving(true)
+    await onSave(value)
+    setSaving(false)
+  }
+
+  return (
+    <div className="py-1">
+      <textarea
+        value={value}
+        autoFocus
+        rows={2}
+        disabled={saving}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            void save()
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            onCancel()
+          }
+        }}
+        className="border-input focus-visible:ring-ring/50 field-sizing-content max-h-40 w-full resize-none rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none focus-visible:ring-[3px]"
+      />
+      <div className="mt-1 flex items-center gap-2">
+        <Button size="sm" className="h-7" disabled={saving || empty} onClick={() => void save()}>
+          Save
+        </Button>
+        <Button variant="ghost" size="sm" className="h-7" onClick={onCancel}>
+          Cancel
+        </Button>
+        {empty && (
+          <span className="text-muted-foreground text-xs">
+            Delete the message instead.
+          </span>
+        )}
+      </div>
     </div>
   )
 }
@@ -587,10 +673,10 @@ function Thread({
   }
 
   const count = replies.length
-  // A deleted message keeps its existing replies readable but takes no new
-  // ones, and nothing is shown at all when it never had any.
-  const deleted = root.deleted_at != null
 
+  // A deleted root still holds a conversation — the tombstone exists precisely
+  // so its replies keep a place to hang — so the thread stays open, readable
+  // and repliable. Only the root's own text is gone.
   if (count === 0 && pending.length === 0 && !open) return null
 
   if (!open) {
@@ -605,11 +691,6 @@ function Thread({
     )
   }
 
-  if (deleted && count === 0 && pending.length === 0) {
-    // The root was deleted while its (empty) thread was open — nothing to show
-    // and nothing to reply to.
-    return null
-  }
 
   return (
     <div className="border-border mt-1.5 space-y-2 border-l-2 pl-3">
@@ -639,16 +720,14 @@ function Thread({
         />
       ))}
 
-      {!deleted && (
-        <Composer
-          inset
-          channelName={undefined}
-          placeholder="Reply…"
-          disabled={!canWrite}
-          autoFocus={forceOpen}
-          onSend={(body, files) => onSend(body, threadRootFor(root), files)}
-        />
-      )}
+      <Composer
+        inset
+        channelName={undefined}
+        placeholder="Reply…"
+        disabled={!canWrite}
+        autoFocus={forceOpen}
+        onSend={(body, files) => onSend(body, threadRootFor(root), files)}
+      />
 
       <button
         type="button"

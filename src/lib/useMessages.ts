@@ -394,6 +394,34 @@ export function useMessages(channelId: string | undefined) {
     [],
   )
 
+  /**
+   * Edit a message's text — SPEC §1.3, which specifies `edited_at` and rules
+   * out edit history as a non-goal, so the previous body is simply overwritten.
+   *
+   * Refuses an empty body: clearing the text is what *delete* does, and it
+   * leaves a message that reads as deleted without being marked so.
+   */
+  const editMessage = useCallback(async (id: number, rawBody: string) => {
+    const body = rawBody.trim()
+    if (!body) return
+
+    const editedAt = new Date().toISOString()
+    const { error: err } = await supabase
+      .from('messages')
+      .update({ body, edited_at: editedAt })
+      .eq('id', id)
+    if (err) {
+      setError(`Could not save the edit: ${err.message}`)
+      return
+    }
+
+    // The realtime UPDATE arrives too; this just skips the round trip for the
+    // person who typed it.
+    setMessages((current) =>
+      current.map((m) => (m.id === id ? { ...m, body, edited_at: editedAt } : m)),
+    )
+  }, [])
+
   /** Remove one file from a message that keeps its text. */
   const deleteAttachment = useCallback(async (attachment: Attachment) => {
     const { error: rmErr } = await supabase.storage
@@ -460,6 +488,7 @@ export function useMessages(channelId: string | undefined) {
     discard,
     deleteMessage,
     deleteAttachment,
+    editMessage,
     dismissError: useCallback(() => setError(null), []),
   }
 }
