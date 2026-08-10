@@ -20,7 +20,7 @@ import {
   XIcon,
 } from 'lucide-react'
 
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { AuthorAvatar } from '@/components/layout/AuthorAvatar'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -842,15 +842,6 @@ function PendingRow({
   )
 }
 
-function AuthorAvatar({ name, url }: { name: string; url: string | null }) {
-  return (
-    <Avatar className="size-8 shrink-0">
-      {url && <AvatarImage src={url} alt="" />}
-      <AvatarFallback className="text-xs">{initials(name)}</AvatarFallback>
-    </Avatar>
-  )
-}
-
 /**
  * The composer. Files are *staged*, never sent on pick — attaching something is
  * not the same gesture as sending it, and the old behaviour fired a message the
@@ -996,13 +987,6 @@ const Composer = forwardRef<
     </div>
   )
 })
-
-function initials(name: string): string {
-  const parts = name.split(/[\s._+-]+/).filter(Boolean)
-  if (parts.length === 0) return '?'
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return (parts[0][0] + parts[1][0]).toUpperCase()
-}
 
 function shortTime(iso: string): string {
   const d = new Date(iso)

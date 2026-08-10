@@ -22,7 +22,12 @@
  * its ~5 MB quota on the first upload.
  */
 
-const STORAGE_KEY = 'threadline.mock.v1'
+/**
+ * Bumped to v2 when the leftover `Guest` profile was removed. An older payload
+ * would otherwise keep reseeding a teammate who does not exist, and the member
+ * list is exactly where that shows up.
+ */
+const STORAGE_KEY = 'threadline.mock.v2'
 
 type Row = Record<string, unknown>
 type Tables = Record<string, Row[]>
@@ -43,7 +48,15 @@ interface Listener {
 }
 
 const MOCK_USER_ID = '00000000-0000-4000-8000-000000000001'
-const GUEST_USER_ID = '00000000-0000-4000-8000-000000000002'
+/**
+ * Two stand-in teammates. Not decoration: mentions need somebody to point at,
+ * and the picker's longest-match rule (`@ethan` must not win over
+ * `@ethan.zhang50`) is only exercisable offline if two names share a prefix.
+ * They replace the `Guest` profile left behind by the reverted guest mode
+ * (DECISIONS #13), which the member list would otherwise render.
+ */
+const TEAMMATE_A_ID = '00000000-0000-4000-8000-000000000002'
+const TEAMMATE_B_ID = '00000000-0000-4000-8000-000000000003'
 
 function seed(): Tables {
   const general = '10000000-0000-4000-8000-000000000001'
@@ -51,8 +64,14 @@ function seed(): Tables {
   const now = new Date().toISOString()
   return {
     profiles: [
-      { id: MOCK_USER_ID, display_name: 'You', avatar_url: null, created_at: now },
-      { id: GUEST_USER_ID, display_name: 'Guest', avatar_url: null, created_at: now },
+      { id: MOCK_USER_ID, display_name: 'you', avatar_url: null, created_at: now },
+      { id: TEAMMATE_A_ID, display_name: 'ethan', avatar_url: null, created_at: now },
+      {
+        id: TEAMMATE_B_ID,
+        display_name: 'ethan.zhang50',
+        avatar_url: null,
+        created_at: now,
+      },
     ],
     channels: [
       {
