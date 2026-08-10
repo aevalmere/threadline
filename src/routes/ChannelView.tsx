@@ -374,7 +374,7 @@ function MessageRow({
   onPreview: (item: PreviewItem) => void
   children?: ReactNode
 }) {
-  const deleted = message.deleted_at !== null
+  const deleted = message.deleted_at != null
 
   return (
     <div className="group hover:bg-accent/40 relative -mx-2 rounded-md px-2 py-0.5 transition-colors focus-within:bg-accent/40">
@@ -589,7 +589,7 @@ function Thread({
   const count = replies.length
   // A deleted message keeps its existing replies readable but takes no new
   // ones, and nothing is shown at all when it never had any.
-  const deleted = root.deleted_at !== null
+  const deleted = root.deleted_at != null
 
   if (count === 0 && pending.length === 0 && !open) return null
 

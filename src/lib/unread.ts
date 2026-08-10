@@ -32,7 +32,7 @@ export function unreadCount({
   let count = 0
   for (const m of messages) {
     if (m.id <= floor) continue
-    if (m.deleted_at !== null) continue
+    if (m.deleted_at != null) continue
     if (m.author_id === viewerId) continue
     count++
   }

@@ -104,6 +104,29 @@ function persist() {
   }
 }
 
+/**
+ * Nullable columns each table actually has, defaulted to null on insert.
+ *
+ * Postgres fills these in; an object literal does not. Without this a mocked
+ * row has `deleted_at === undefined`, and `undefined !== null` made every
+ * message read as deleted — which hid the hover actions and the reply composer
+ * on every message in mock mode. A mock that omits columns is a mock that
+ * invents states the database cannot produce.
+ */
+const COLUMN_DEFAULTS: Record<string, Row> = {
+  messages: {
+    channel_id: null,
+    post_id: null,
+    thread_root_id: null,
+    edited_at: null,
+    deleted_at: null,
+  },
+  channels: { topic: null, created_by: null },
+  profiles: { avatar_url: null },
+  channel_members: { last_read_message_id: null },
+  attachments: { mime: null, size_bytes: null },
+}
+
 /** messages.id is a bigint identity; everything else is a uuid. */
 function nextId(table: string): unknown {
   if (table === 'messages') {
@@ -229,6 +252,7 @@ class Query implements PromiseLike<{ data: unknown; error: null | { message: str
         const created: Row = {
           id: nextId(this.table),
           created_at: new Date().toISOString(),
+          ...(COLUMN_DEFAULTS[this.table] ?? {}),
           ...row,
         }
         // Threads are one level deep — the flatten_thread_root trigger's job

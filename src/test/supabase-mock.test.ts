@@ -53,6 +53,46 @@ describe('mock query builder', () => {
     expect((data as { id: number }).id).toBeGreaterThan(0)
   })
 
+  it('fills nullable columns with null, not undefined', async () => {
+    // The bug this guards: an inserted row without `deleted_at` left it
+    // undefined, `undefined !== null` read as deleted, and every message in
+    // mock mode rendered as "message deleted" with no hover actions and no
+    // reply composer.
+    const { data } = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, author_id: 'u1', body: 'hi' })
+      .select('*')
+      .single()
+
+    const row = data as Record<string, unknown>
+    for (const col of ['deleted_at', 'edited_at', 'thread_root_id', 'post_id']) {
+      expect(row).toHaveProperty(col)
+      expect(row[col]).toBeNull()
+    }
+  })
+
+  it('defaults nullable columns on the other tables too', async () => {
+    const ch = await mockSupabase
+      .from('channels')
+      .insert({ name: 'defaults-probe', kind: 'chat' })
+      .select('*')
+      .single()
+    expect((ch.data as Record<string, unknown>).topic).toBeNull()
+
+    const att = await mockSupabase
+      .from('attachments')
+      .insert({
+        owner_type: 'message',
+        owner_id: '1',
+        storage_path: 'p',
+        filename: 'f',
+      })
+      .select('*')
+      .single()
+    expect((att.data as Record<string, unknown>).mime).toBeNull()
+    expect((att.data as Record<string, unknown>).size_bytes).toBeNull()
+  })
+
   it('gives messages ascending bigint ids, like the real identity column', async () => {
     const a = await mockSupabase
       .from('messages')
