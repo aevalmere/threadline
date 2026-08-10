@@ -23,11 +23,14 @@
  */
 
 /**
- * Bumped to v2 when the leftover `Guest` profile was removed. An older payload
- * would otherwise keep reseeding a teammate who does not exist, and the member
- * list is exactly where that shows up.
+ * Bumped whenever the seeded shape changes, because a stale payload in
+ * localStorage is loaded verbatim and would otherwise resurrect the old one.
+ *
+ * v2 dropped the leftover `Guest` profile from the reverted guest mode.
+ * v3 added `username`, without which sign-in and mentions have nothing to
+ * resolve and every profile renders as a teammate the app cannot name.
  */
-const STORAGE_KEY = 'threadline.mock.v2'
+const STORAGE_KEY = 'threadline.mock.v3'
 
 type Row = Record<string, unknown>
 type Tables = Record<string, Row[]>
@@ -64,11 +67,24 @@ function seed(): Tables {
   const now = new Date().toISOString()
   return {
     profiles: [
-      { id: MOCK_USER_ID, display_name: 'you', avatar_url: null, created_at: now },
-      { id: TEAMMATE_A_ID, display_name: 'ethan', avatar_url: null, created_at: now },
+      {
+        id: MOCK_USER_ID,
+        username: 'you',
+        display_name: 'You',
+        avatar_url: null,
+        created_at: now,
+      },
+      {
+        id: TEAMMATE_A_ID,
+        username: 'ethan',
+        display_name: 'Ethan',
+        avatar_url: null,
+        created_at: now,
+      },
       {
         id: TEAMMATE_B_ID,
-        display_name: 'ethan.zhang50',
+        username: 'ethan.zhang50',
+        display_name: 'Ethan Zhang',
         avatar_url: null,
         created_at: now,
       },
@@ -360,6 +376,12 @@ const session = {
 let currentSession: typeof session | null = session
 const authCallbacks = new Set<(event: string, s: typeof session | null) => void>()
 
+function emitAuth() {
+  for (const cb of authCallbacks) {
+    cb(currentSession ? 'SIGNED_IN' : 'SIGNED_OUT', currentSession)
+  }
+}
+
 export const mockSupabase = {
   from: (table: string) => ({
     select: (cols?: string) => new Query(table, 'select').select(cols),
@@ -406,6 +428,63 @@ export const mockSupabase = {
     }),
   },
 
+  /**
+   * Postgres functions. Only `email_for_username` exists (DECISIONS #14), and
+   * it is the one thing the real client calls before it has a session.
+   */
+  rpc: async (fn: string, args: Record<string, unknown>) => {
+    if (fn !== 'email_for_username') {
+      return { data: null, error: { message: `mock: no such function ${fn}` } }
+    }
+    const wanted = String(args.u ?? '')
+      .trim()
+      .toLowerCase()
+    const hit = (db.profiles ?? []).find(
+      (p) => String(p.username ?? '').toLowerCase() === wanted,
+    )
+    // Mirrors the SQL: a miss is null data, never an error.
+    return { data: hit ? `${String(hit.username)}@localhost` : null, error: null }
+  },
+
+  functions: {
+    /**
+     * The register Edge Function.
+     *
+     * **The invite code is not checked here, and cannot be** — the secret lives
+     * on the server and this runs entirely in the browser. So offline
+     * registration accepts any code. That is a hole in the mock, not in the
+     * product, and it is exactly the class of thing DECISIONS #12 warns about:
+     * a green mock run says the wiring works, never that the gate does.
+     */
+    invoke: async (name: string, opts?: { body?: Record<string, unknown> }) => {
+      if (name !== 'register') {
+        return { data: null, error: { message: `mock: no such function ${name}` } }
+      }
+      const body = opts?.body ?? {}
+      const username = String(body.username ?? '').toLowerCase()
+      const displayName = String(body.displayName ?? '') || username
+
+      if (
+        (db.profiles ?? []).some(
+          (p) => String(p.username ?? '').toLowerCase() === username,
+        )
+      ) {
+        return { data: { error: 'That username is taken.' }, error: null }
+      }
+
+      const id = crypto.randomUUID()
+      db.profiles.push({
+        id,
+        username,
+        display_name: displayName,
+        avatar_url: null,
+        created_at: new Date().toISOString(),
+      })
+      persist()
+      return { data: { ok: true, username }, error: null }
+    },
+  },
+
   auth: {
     getSession: async () => ({ data: { session: currentSession }, error: null }),
     onAuthStateChange: (cb: (event: string, s: typeof session | null) => void) => {
@@ -414,15 +493,33 @@ export const mockSupabase = {
         data: { subscription: { unsubscribe: () => authCallbacks.delete(cb) } },
       }
     },
-    signInWithOtp: async () => {
-      // No email round trip offline; signing in is immediate.
-      currentSession = session
-      for (const cb of authCallbacks) cb('SIGNED_IN', currentSession)
-      return { data: {}, error: null }
+    /**
+     * No password is stored or checked offline — any password signs you in as
+     * whoever the username names. Same caveat as the invite code above.
+     */
+    signInWithPassword: async ({ email }: { email: string }) => {
+      const username = email.split('@')[0]?.toLowerCase() ?? ''
+      const who = (db.profiles ?? []).find(
+        (p) => String(p.username ?? '').toLowerCase() === username,
+      )
+      if (!who) {
+        return {
+          data: { session: null, user: null },
+          error: { message: 'Invalid login credentials' },
+        }
+      }
+      currentSession = {
+        ...session,
+        user: { ...session.user, id: String(who.id), email },
+      }
+      emitAuth()
+      return { data: { session: currentSession, user: currentSession.user }, error: null }
     },
+    resetPasswordForEmail: async () => ({ data: {}, error: null }),
+    updateUser: async () => ({ data: { user: currentSession?.user ?? null }, error: null }),
     signOut: async () => {
       currentSession = null
-      for (const cb of authCallbacks) cb('SIGNED_OUT', null)
+      emitAuth()
       return { error: null }
     },
   },

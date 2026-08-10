@@ -61,7 +61,13 @@ if (MOCK_BACKEND) {
 
 export interface Profile {
   id: string
+  /** Unique handle: the sign-in identifier and the @mention key (SPEC §2.3). */
+  username: string
   display_name: string
+  /**
+   * A **storage path** in the private `attachments` bucket, not a URL — it has
+   * to be signed before it can be rendered. Null until someone uploads one.
+   */
   avatar_url: string | null
   created_at: string
 }

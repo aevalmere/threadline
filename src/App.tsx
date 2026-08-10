@@ -8,7 +8,9 @@ import Channels from '@/routes/Channels'
 import Docs from '@/routes/Docs'
 import Forums from '@/routes/Forums'
 import Login from '@/routes/Login'
+import Register from '@/routes/Register'
 import RequireAuth from '@/routes/RequireAuth'
+import ResetPassword from '@/routes/ResetPassword'
 import Tasks from '@/routes/Tasks'
 
 export default function App() {
@@ -17,6 +19,10 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          {/* Public: requesting a link needs no session. With one, the same
+              route sets the new password. */}
+          <Route path="/reset" element={<ResetPassword />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
 
           <Route element={<RequireAuth />}>
