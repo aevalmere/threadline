@@ -28,7 +28,7 @@ One phase at a time. **A phase starts only after the user approves the previous 
 
 - [x] Channel CRUD
 - [x] Realtime messages with optimistic send
-- [ ] Threaded replies
+- [x] Threaded replies
 - [x] Database guard for the one-level-deep thread rule — `flatten_thread_root` trigger *(pulled forward from BACKLOG on Ethan's call; DECISIONS #8)*
 - [ ] Uploads to Supabase Storage — 10 MB cap, inline image thumbnails
 - [ ] @mentions writing `notifications` rows
