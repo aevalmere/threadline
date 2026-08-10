@@ -9,8 +9,12 @@
 --   * handle_new_user() reading the username chosen at registration
 --   * email_for_username(), so a typed username can reach signInWithPassword
 --
--- The client mirrors the username rule for instant errors; this file is the
--- wall. They must be changed together.
+-- The register Edge Function and the client both mirror the username rule for
+-- instant errors; this file is the wall. They must be changed together.
+--
+-- NOTE: step 5's CHECK was tightened by 20260810131038 — a trailing `.`/`-`/`_`
+-- was legal here but stripped by slugify_username(), so the two disagreed. Read
+-- that migration before trusting the regex below.
 --
 -- Project-level signups stay DISABLED. That is what makes the invite code a
 -- gate rather than decoration: without it, anyone holding the anon key could

@@ -88,7 +88,7 @@ create policy "<t>_authenticated_all" on public.<t>
   using (true) with check (true);
 ```
 
-One blanket policy per table. No per-row ownership policies. No policy mazes. `anon` gets nothing. The `service_role` key never appears in client code or the repo — it exists only in `.env.local` for `scripts/seed.ts`.
+One blanket policy per table. No per-row ownership policies. No policy mazes. `anon` gets nothing. The `service_role` key never appears in client code or the repo. It exists in exactly two places: `.env.local` for `scripts/seed.ts`, and injected by the platform into the `register` Edge Function (§5), which is server-side and whose source contains only the variable's name.
 
 **One deliberate exception, and only one.** `email_for_username(text)` is a `security definer` function granted to `anon`, because sign-in resolves a typed username to an email before any session exists (§5). It returns one scalar column and grants no table access. DECISIONS #14 records what that costs — it is an account-existence oracle — and why it was still the better trade. Anything else reachable by `anon` is a bug.
 
@@ -102,12 +102,14 @@ Phase column = when the migration lands.
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `uuid` PK | → `auth.users(id)` on delete cascade |
-| `username` | `text not null` | unique on `lower(username)`; `check (username ~ '^[a-z0-9][a-z0-9._-]{2,23}$')` |
+| `username` | `text not null` | unique on `lower(username)`; `check (username ~ '^[a-z0-9][a-z0-9._-]{1,22}[a-z0-9]$')` |
 | `display_name` | `text not null` | chosen at registration; falls back to the username |
 | `avatar_url` | `text` | **storage path** in the `attachments` bucket under `avatars/`, not a URL — the bucket is private, so it is signed on read |
 | `created_at` | `timestamptz not null default now()` | |
 
 `username` is both the sign-in identifier (§5) and the @mention key. It is unique so a mention is unambiguous; display names are not unique and never resolve mentions.
+
+**3–24 characters, first *and* last alphanumeric.** That set is exactly the fixed points of `slugify_username()` — the values it returns unchanged — and it has to be, because registration stores the *slug* of what was requested while `/settings` stores the value verbatim. When the two disagreed, asking for `bob.` created an account named `bob` that its owner could not sign into. See DECISIONS #14.
 
 Trigger `handle_new_user()` `after insert on auth.users` inserts the profile row, reading `username` and `display_name` from `raw_user_meta_data`. This is what makes a dashboard-created teammate work with zero extra steps: with no metadata it derives a username from the email local part, disambiguating with a numeric suffix. A username *chosen at registration* that collides raises instead — see DECISIONS #14.
 

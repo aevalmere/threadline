@@ -5,7 +5,21 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'supabase/.temp'] },
+  {
+    ignores: [
+      'dist',
+      'node_modules',
+      'supabase/.temp',
+      // Edge Functions are Deno, not browser or Node: `Deno.serve`, `jsr:`
+      // specifiers, and no tsconfig covering them. Linting them with this
+      // config reports the runtime as errors.
+      //
+      // Nothing else checks them either — `functions deploy` bundles with
+      // esbuild, which strips types without checking them. Their correctness
+      // rests on review and on live probes against the deployed function.
+      'supabase/functions',
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],

@@ -525,14 +525,32 @@ seed probe therefore collides on the exact stored value, because an upper-cased
 one is refused by the CHECK (23514) before the index is ever consulted — a first
 draft asserted 23505 there and could never have passed.
 
+**The username rule is the *fixed points* of `slugify_username()`.** First and
+last character alphanumeric, 3–24 characters. The "last" half was missing from
+the first draft and the reviewer caught it: the CHECK permitted a trailing `.`,
+`-` or `_` while `slugify_username()` strips them, and the two write paths then
+disagreed about the same typed name. Registering `bob.` stored `bob` — an
+account its owner could not sign into, because `email_for_username()` resolves
+the stored name and not the typed one — while `/settings`, which updates the
+column directly, would have stored `bob.` verbatim. Worse, a name whose slug
+fell under three characters (`a._`) was discarded entirely and replaced with one
+derived from the email. `20260810131038_tighten_username_format.sql` closes it,
+as a new migration rather than an edit. `format trail` in the seed is the
+regression test.
+
 **Known limits, accepted.**
 - No rate limiting of our own on the register function beyond the platform's, so
   the invite code must be long and random. Rotating it is one `secrets set`.
-- The username format rule now lives in three places — `slugify_username()` and
-  a CHECK constraint in the database, `src/lib/username.ts` in the client, and a
-  re-check in the Edge Function. The database is the wall; the other two exist
-  for instant errors. A single `.sql`-sourced rule is not worth the machinery at
-  this size, but they must be changed together.
+- The username format rule lives in three places — `slugify_username()` plus the
+  CHECK constraint in the database, the client, and a re-check in the Edge
+  Function. The database is the wall; the other two exist for instant errors. A
+  single `.sql`-sourced rule is not worth the machinery at this size, but the
+  bug above is exactly what divergence costs, so they must be changed together.
+- Edge Functions are type-checked by neither `tsc -b` (the tsconfigs cover `src`
+  and `scripts` only) nor eslint (which now ignores `supabase/functions`,
+  because linting Deno globals and `jsr:` specifiers with the browser config
+  reports the runtime as errors). Their correctness rests on review and on the
+  live probes recorded above.
 - A dashboard invite whose email local part collides with an existing username
   gets a numeric suffix; a username *chosen at registration* that collides
   raises instead. Different on purpose — see the migration's comment.

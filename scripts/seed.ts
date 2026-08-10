@@ -430,22 +430,33 @@ async function accountsCheck(): Promise<ProbeResult[]> {
       : `duplicate username accepted — ${clash.error?.message ?? 'no error'}`,
   })
 
-  // The format CHECK. Without this the constraint added by the usernames
-  // migration is asserted by nothing — and it is the reason the probe above
-  // has to collide in lower case, so the two belong together.
-  const malformed = await admin
-    .from('profiles')
-    .update({ username: '.nope' })
-    .eq('id', userB)
-    .select('id')
-  const refused = malformed.error?.code === '23514'
-  out.push({
-    verb: 'format',
-    ok: refused,
-    detail: refused
-      ? 'a malformed username was rejected (23514)'
-      : `malformed username accepted — ${malformed.error?.message ?? 'no error'}`,
-  })
+  // The format CHECK. Without this the constraint is asserted by nothing — and
+  // it is the reason the probe above has to collide in lower case, so the two
+  // belong together.
+  //
+  // `nope.` is the regression case: the first version of the constraint
+  // permitted a trailing dot, while slugify_username() strips it, so
+  // registering `nope.` created an account named `nope` that its owner could
+  // not sign into. Both ends are checked so a future relaxation of either
+  // fails here.
+  for (const [label, bad] of [
+    ['format lead', '.nope'],
+    ['format trail', 'nope.'],
+  ] as const) {
+    const malformed = await admin
+      .from('profiles')
+      .update({ username: bad })
+      .eq('id', userB)
+      .select('id')
+    const refused = malformed.error?.code === '23514'
+    out.push({
+      verb: label,
+      ok: refused,
+      detail: refused
+        ? `"${bad}" was rejected (23514)`
+        : `"${bad}" accepted — ${malformed.error?.message ?? 'no error'}`,
+    })
+  }
 
   // The trigger honours a username chosen at registration. Throwaway account,
   // removed either way.
