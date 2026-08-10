@@ -144,7 +144,7 @@ export default function ChannelView() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="shrink-0 pb-4">
+      <div className="shrink-0 border-b px-6 py-4">
         <h1 className="text-xl font-semibold tracking-tight">
           {channel ? `#${channel.name}` : <Skeleton className="h-6 w-32" />}
         </h1>
@@ -175,8 +175,10 @@ export default function ChannelView() {
           if (files.length > 0) composerRef.current?.stage(files)
         }}
         className={cn(
-          'min-h-0 flex-1 overflow-y-auto rounded-md',
-          dragging && 'ring-primary bg-primary/5 ring-2',
+          // Full-bleed so the scrollbar sits at the window edge; the inset is
+          // padding inside the scroll container, not around it.
+          'min-h-0 flex-1 overflow-y-auto px-6 py-4',
+          dragging && 'ring-primary bg-primary/5 ring-2 -ring-offset-2',
         )}
       >
         {error && (
@@ -229,6 +231,7 @@ export default function ChannelView() {
                     onPreview={setPreview}
                     forceOpen={openThread === message.id}
                     canWrite={canWrite}
+                    onCollapse={() => setOpenThread(null)}
                     onSend={send}
                     onRetry={retry}
                     onDiscard={discard}
@@ -257,7 +260,7 @@ export default function ChannelView() {
           captures sinceId 0, which lets an unrelated older message of the
           same body claim the entry. */}
       {!canWrite && !loading && (
-        <p role="alert" className="text-destructive shrink-0 pt-3 text-sm">
+        <p role="alert" className="text-destructive shrink-0 px-6 text-sm">
           {isGuest
             ? 'Guest posting is unavailable — the shared Guest profile is missing. Run npm run seed.'
             : 'You are signed out.'}
@@ -281,10 +284,7 @@ export default function ChannelView() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete this message?</DialogTitle>
-            <DialogDescription>
-              The text and any attached files are permanently removed. A
-              &ldquo;message deleted&rdquo; marker stays so replies keep their place.
-            </DialogDescription>
+            <DialogDescription>This cannot be undone.</DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setConfirmDelete(null)}>
@@ -555,6 +555,7 @@ function Thread({
   onPreview,
   forceOpen,
   canWrite,
+  onCollapse,
   onSend,
   onRetry,
   onDiscard,
@@ -568,6 +569,7 @@ function Thread({
   onPreview: (item: PreviewItem) => void
   forceOpen: boolean
   canWrite: boolean
+  onCollapse: () => void
   onSend: (body: string, threadRootId: number | null, files: File[]) => Promise<void>
   onRetry: (key: string) => Promise<void>
   onDiscard: (key: string) => void
@@ -575,33 +577,38 @@ function Thread({
   const [selfOpen, setSelfOpen] = useState(false)
   const { nameFor, byId } = useProfiles()
 
-  // The hover Reply button opens the thread from outside this component.
+  // The hover Reply button opens the thread from outside this component, so
+  // collapsing has to clear that too — otherwise `forceOpen` holds it open and
+  // the Collapse button does nothing.
   const open = selfOpen || forceOpen
-  const setOpen = setSelfOpen
+  function collapse() {
+    setSelfOpen(false)
+    onCollapse()
+  }
 
   const count = replies.length
-  if (count === 0 && !open && pending.length === 0) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="text-muted-foreground hover:text-foreground mt-0.5 text-xs"
-      >
-        Reply
-      </button>
-    )
-  }
+  // A deleted message keeps its existing replies readable but takes no new
+  // ones, and nothing is shown at all when it never had any.
+  const deleted = root.deleted_at !== null
+
+  if (count === 0 && pending.length === 0 && !open) return null
 
   if (!open) {
     return (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => setSelfOpen(true)}
         className="text-primary mt-0.5 text-xs font-medium hover:underline"
       >
         {count} {count === 1 ? 'reply' : 'replies'}
       </button>
     )
+  }
+
+  if (deleted && count === 0 && pending.length === 0) {
+    // The root was deleted while its (empty) thread was open — nothing to show
+    // and nothing to reply to.
+    return null
   }
 
   return (
@@ -632,17 +639,20 @@ function Thread({
         />
       ))}
 
-      <Composer
-        channelName={undefined}
-        placeholder="Reply…"
-        disabled={!canWrite}
-        autoFocus={forceOpen}
-        onSend={(body, files) => onSend(body, threadRootFor(root), files)}
-      />
+      {!deleted && (
+        <Composer
+          inset
+          channelName={undefined}
+          placeholder="Reply…"
+          disabled={!canWrite}
+          autoFocus={forceOpen}
+          onSend={(body, files) => onSend(body, threadRootFor(root), files)}
+        />
+      )}
 
       <button
         type="button"
-        onClick={() => setOpen(false)}
+        onClick={collapse}
         className="text-muted-foreground hover:text-foreground text-xs"
       >
         Collapse
@@ -745,8 +755,13 @@ const Composer = forwardRef<
     disabled: boolean
     placeholder?: string
     autoFocus?: boolean
+    /** Nested inside a thread, so it skips the full-width composer chrome. */
+    inset?: boolean
   }
->(function Composer({ channelName, onSend, disabled, placeholder, autoFocus }, ref) {
+>(function Composer(
+  { channelName, onSend, disabled, placeholder, autoFocus, inset },
+  ref,
+) {
   const [value, setValue] = useState('')
   const [staged, setStaged] = useState<File[]>([])
   const [rejected, setRejected] = useState<string | null>(null)
@@ -797,7 +812,7 @@ const Composer = forwardRef<
   const canSend = !disabled && (value.trim().length > 0 || staged.length > 0)
 
   return (
-    <div className="shrink-0 pt-3">
+    <div className={cn('shrink-0', inset ? 'pt-2' : 'border-t px-6 py-3')}>
       {staged.length > 0 && (
         <ul className="mb-2 flex flex-wrap gap-2">
           {staged.map((f, i) => (

@@ -44,7 +44,10 @@ export default function AppShell() {
               </div>
             </header>
 
-            <main className="min-h-0 flex-1 overflow-y-auto p-6">
+            {/* No padding here — routes own their insets so a scroll
+                container can reach the window edge and put its scrollbar
+                there rather than floating 24px inside. */}
+            <main className="min-h-0 flex-1 overflow-y-auto">
               <Outlet />
             </main>
           </div>

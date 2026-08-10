@@ -28,7 +28,7 @@ export default function Channels() {
   const [dialog, setDialog] = useState<DialogState>(null)
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="mx-auto max-w-2xl space-y-6 p-6">
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-xl font-semibold tracking-tight">Channels</h1>
         <Button size="sm" onClick={() => setDialog({ mode: 'create' })}>
