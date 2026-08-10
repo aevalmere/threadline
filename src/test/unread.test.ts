@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  hasUnread,
   nextLastReadMessageId,
+  reconcileUnread,
   unreadBadge,
-  unreadCount,
   type UnreadMessage,
 } from '@/lib/unread'
 
@@ -18,55 +17,6 @@ function msg(
 ): UnreadMessage {
   return { id, author_id, deleted_at }
 }
-
-describe('unreadCount', () => {
-  it('counts only messages after the pointer', () => {
-    const messages = [msg(1), msg(2), msg(3), msg(4)]
-    expect(unreadCount({ messages, lastReadMessageId: 2, viewerId: ME })).toBe(2)
-  })
-
-  it('treats a null pointer as everything unread', () => {
-    const messages = [msg(1), msg(2), msg(3)]
-    expect(unreadCount({ messages, lastReadMessageId: null, viewerId: ME })).toBe(3)
-  })
-
-  it('excludes the viewer own messages', () => {
-    const messages = [msg(1, ME), msg(2, THEM), msg(3, ME), msg(4, THEM)]
-    expect(unreadCount({ messages, lastReadMessageId: null, viewerId: ME })).toBe(2)
-  })
-
-  it('excludes soft-deleted messages', () => {
-    const messages = [msg(1), msg(2, THEM, '2026-08-09T00:00:00Z'), msg(3)]
-    expect(unreadCount({ messages, lastReadMessageId: null, viewerId: ME })).toBe(2)
-  })
-
-  it('is zero when the pointer is at or past the newest message', () => {
-    const messages = [msg(1), msg(2), msg(3)]
-    expect(unreadCount({ messages, lastReadMessageId: 3, viewerId: ME })).toBe(0)
-    expect(unreadCount({ messages, lastReadMessageId: 99, viewerId: ME })).toBe(0)
-  })
-
-  it('is zero for an empty channel', () => {
-    expect(unreadCount({ messages: [], lastReadMessageId: null, viewerId: ME })).toBe(0)
-  })
-
-  it('does not count the pointer message itself', () => {
-    // The pointer is inclusive-read: id 2 has been read, so only 3 is unread.
-    const messages = [msg(2), msg(3)]
-    expect(unreadCount({ messages, lastReadMessageId: 2, viewerId: ME })).toBe(1)
-  })
-})
-
-describe('hasUnread', () => {
-  it('mirrors unreadCount > 0', () => {
-    expect(hasUnread({ messages: [msg(5)], lastReadMessageId: 4, viewerId: ME })).toBe(
-      true,
-    )
-    expect(hasUnread({ messages: [msg(5)], lastReadMessageId: 5, viewerId: ME })).toBe(
-      false,
-    )
-  })
-})
 
 describe('nextLastReadMessageId', () => {
   it('advances to the highest id seen', () => {
@@ -106,5 +56,68 @@ describe('unreadBadge', () => {
   it('caps the display', () => {
     expect(unreadBadge(100)).toBe('99+')
     expect(unreadBadge(5, 3)).toBe('3+')
+  })
+})
+
+describe('reconcileUnread', () => {
+  const none = new Set<string>()
+
+  it('passes server counts through when nothing is pending', () => {
+    const out = reconcileUnread(
+      [
+        { channel_id: 'a', unread: 3 },
+        { channel_id: 'b', unread: 0 },
+      ],
+      none,
+    )
+    expect(out.get('a')).toBe(3)
+    expect(out.get('b')).toBe(0)
+  })
+
+  /**
+   * The regression. The pointer write is debounced, so a refresh that resolves
+   * first sees a stale pointer and reports the channel being read as unread —
+   * and nothing would ever correct it.
+   */
+  it('pins a channel with an unwritten read to zero', () => {
+    const out = reconcileUnread([{ channel_id: 'a', unread: 5 }], new Set(['a']))
+    expect(out.get('a')).toBe(0)
+  })
+
+  it('only pins the pending channel, not its neighbours', () => {
+    const out = reconcileUnread(
+      [
+        { channel_id: 'a', unread: 5 },
+        { channel_id: 'b', unread: 7 },
+      ],
+      new Set(['a']),
+    )
+    expect(out.get('a')).toBe(0)
+    expect(out.get('b')).toBe(7)
+  })
+
+  it('keeps every channel the server reported, so a read channel is not "unknown"', () => {
+    const out = reconcileUnread(
+      [
+        { channel_id: 'a', unread: 0 },
+        { channel_id: 'b', unread: 0 },
+      ],
+      none,
+    )
+    expect([...out.keys()].sort()).toEqual(['a', 'b'])
+  })
+
+  it('coerces a non-numeric count rather than propagating NaN', () => {
+    const out = reconcileUnread(
+      [{ channel_id: 'a', unread: undefined as unknown as number }],
+      none,
+    )
+    expect(out.get('a')).toBe(0)
+  })
+
+  it('ignores a pending channel the server did not mention', () => {
+    const out = reconcileUnread([{ channel_id: 'a', unread: 1 }], new Set(['zzz']))
+    expect(out.get('a')).toBe(1)
+    expect(out.has('zzz')).toBe(false)
   })
 })

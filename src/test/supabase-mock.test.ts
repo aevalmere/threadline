@@ -396,3 +396,154 @@ describe('mock .is()', () => {
     await mockSupabase.from('notifications').delete().eq('id', row.id)
   })
 })
+
+/**
+ * `upsert` and `unread_counts` — the unread badge's two dependencies offline.
+ *
+ * Both are reproductions of behaviour that lives on the server, so they are
+ * exactly the kind of thing DECISIONS #12 says to cover: a mock that quietly
+ * disagrees with Postgres sends you hunting for an app bug that is not there.
+ */
+describe('mock upsert', () => {
+  const CH = '10000000-0000-4000-8000-000000000002'
+  const ME = '00000000-0000-4000-8000-000000000001'
+
+  it('inserts when the conflict target does not match, then updates in place', async () => {
+    // A pair with no existing row: the real channel_members has none for a
+    // channel you have never opened.
+    const other = '99999999-0000-4000-8000-00000000ffff'
+    const first = await mockSupabase
+      .from('channel_members')
+      .upsert(
+        { channel_id: other, user_id: ME, last_read_message_id: 3 },
+        { onConflict: 'channel_id,user_id' },
+      )
+      .select('last_read_message_id')
+    expect((first.data as { last_read_message_id: number }[])[0].last_read_message_id).toBe(3)
+
+    const second = await mockSupabase
+      .from('channel_members')
+      .upsert(
+        { channel_id: other, user_id: ME, last_read_message_id: 8 },
+        { onConflict: 'channel_id,user_id' },
+      )
+      .select('last_read_message_id')
+    expect((second.data as { last_read_message_id: number }[])[0].last_read_message_id).toBe(8)
+
+    // Updated, not duplicated.
+    const { data: all } = await mockSupabase
+      .from('channel_members')
+      .select('*')
+      .eq('channel_id', other)
+    expect((all as unknown[]).length).toBe(1)
+
+    await mockSupabase.from('channel_members').delete().eq('channel_id', other)
+  })
+
+  it('leaves an existing seeded row addressable by its conflict target', async () => {
+    await mockSupabase
+      .from('channel_members')
+      .upsert(
+        { channel_id: CH, user_id: ME, last_read_message_id: 42 },
+        { onConflict: 'channel_id,user_id' },
+      )
+    const { data } = await mockSupabase
+      .from('channel_members')
+      .select('*')
+      .eq('channel_id', CH)
+    expect((data as unknown[]).length).toBe(1)
+  })
+})
+
+describe('mock unread_counts', () => {
+  const CH = '10000000-0000-4000-8000-000000000001'
+  const ME = '00000000-0000-4000-8000-000000000001'
+  const THEM = '00000000-0000-4000-8000-000000000002'
+
+  async function countFor(channelId: string) {
+    const { data } = await mockSupabase.rpc('unread_counts')
+    const row = (data as { channel_id: string; unread: number }[]).find(
+      (r) => r.channel_id === channelId,
+    )
+    return row?.unread ?? null
+  }
+
+  beforeEach(async () => {
+    // Sign in explicitly. `unread_counts` answers for the *current session*,
+    // and an earlier describe in this file signs in as someone else — without
+    // this, "their" messages would be counted as mine and every number here
+    // would be wrong for a reason that has nothing to do with the mock.
+    await mockSupabase.auth.signInWithPassword({
+      email: 'you@localhost',
+      password: 'ignored',
+    })
+    const { data } = await mockSupabase.from('messages').select('*')
+    for (const m of data as { id: number }[]) {
+      await mockSupabase.from('messages').delete().eq('id', m.id)
+    }
+    await mockSupabase
+      .from('channel_members')
+      .upsert(
+        { channel_id: CH, user_id: ME, last_read_message_id: null },
+        { onConflict: 'channel_id,user_id' },
+      )
+  })
+
+  it('counts someone else’s messages but not your own', async () => {
+    await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CH, author_id: THEM, body: 'theirs' })
+    await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CH, author_id: ME, body: 'mine' })
+    expect(await countFor(CH)).toBe(1)
+  })
+
+  it('stops counting a soft-deleted message', async () => {
+    const { data } = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CH, author_id: THEM, body: 'doomed' })
+      .select('id')
+      .single()
+    expect(await countFor(CH)).toBe(1)
+    await mockSupabase
+      .from('messages')
+      .update({ body: '', deleted_at: new Date().toISOString() })
+      .eq('id', (data as { id: number }).id)
+    expect(await countFor(CH)).toBe(0)
+  })
+
+  it('respects the read pointer', async () => {
+    const { data } = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CH, author_id: THEM, body: 'first' })
+      .select('id')
+      .single()
+    await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CH, author_id: THEM, body: 'second' })
+    expect(await countFor(CH)).toBe(2)
+
+    await mockSupabase
+      .from('channel_members')
+      .upsert(
+        {
+          channel_id: CH,
+          user_id: ME,
+          last_read_message_id: (data as { id: number }).id,
+        },
+        { onConflict: 'channel_id,user_id' },
+      )
+    expect(await countFor(CH)).toBe(1)
+  })
+
+  it('reports a channel with nothing unread rather than omitting it', async () => {
+    // The LEFT JOIN in the SQL exists for this: a channel with no unread must
+    // still appear, or the sidebar cannot tell "read" from "unknown".
+    const { data } = await mockSupabase.rpc('unread_counts')
+    const rows = data as { channel_id: string; unread: number }[]
+    const here = rows.find((r) => r.channel_id === CH)
+    expect(here).toBeDefined()
+    expect(here!.unread).toBe(0)
+  })
+})

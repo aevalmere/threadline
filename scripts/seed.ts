@@ -345,6 +345,219 @@ async function storageCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
 }
 
 /**
+ * `unread_counts()` — SPEC §1.4, clause by clause.
+ *
+ * **This is the never-break path for unread counting** (ROADMAP). It used to be
+ * a unit test over a pure `unreadCount()`, but the rule moved into SQL when the
+ * client-side version turned out to be unfixable (DECISIONS #18), so the
+ * coverage moved with it. Asserting it here is strictly better evidence: it
+ * runs against the real function, through the anon client, under RLS.
+ *
+ * Every clause gets its own probe, because each one is a different way to be
+ * silently wrong — and a badge that reads 0 when you have unread messages is
+ * exactly the failure that shipped before this existed.
+ */
+async function unreadCountsCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
+  const out: ProbeResult[] = []
+  const me = await ensureUser(EMAIL_A)
+  const them = await ensureUser(EMAIL_B)
+
+  // A private stage, so real channel traffic cannot move these numbers.
+  const stage = await ensureChannel('__unread_counts', 'temporary', them)
+  await admin.from('messages').delete().eq('channel_id', stage)
+  await admin
+    .from('channel_members')
+    .delete()
+    .eq('channel_id', stage)
+    .eq('user_id', me)
+
+  const say = async (author: string, body: string) => {
+    const { data } = await admin
+      .from('messages')
+      .insert({ channel_id: stage, author_id: author, body })
+      .select('id')
+      .single<{ id: number }>()
+    return data!.id
+  }
+
+  const countHere = async (): Promise<number | null> => {
+    const { data, error } = await anon.rpc('unread_counts')
+    if (error) return null
+    const row = ((data ?? []) as { channel_id: string; unread: number }[]).find(
+      (r) => r.channel_id === stage,
+    )
+    return row ? Number(row.unread) : null
+  }
+
+  // No membership row at all — a channel created after you joined. It must
+  // still be counted, which is why the function LEFT JOINs channel_members.
+  await say(them, '__u1')
+  await say(them, '__u2')
+  const noRow = await countHere()
+  out.push({
+    verb: 'unread no-row',
+    ok: noRow === 2,
+    detail: noRow === 2 ? '2 unread with no membership row' : `got ${noRow}`,
+  })
+
+  // Your own messages are never unread to you.
+  await say(me, '__mine')
+  const mine = await countHere()
+  out.push({
+    verb: 'unread own',
+    ok: mine === 2,
+    detail: mine === 2 ? 'own message did not count' : `got ${mine}, wanted 2`,
+  })
+
+  // A tombstoned message stops counting (SPEC §1.3).
+  const doomed = await say(them, '__doomed')
+  const before = await countHere()
+  await admin
+    .from('messages')
+    .update({ body: '', deleted_at: new Date().toISOString() })
+    .eq('id', doomed)
+  const after = await countHere()
+  out.push({
+    verb: 'unread deleted',
+    ok: before === 3 && after === 2,
+    detail:
+      before === 3 && after === 2
+        ? 'deleting a message decremented the count'
+        : `${before} → ${after}, wanted 3 → 2`,
+  })
+
+  // The pointer: everything at or below it stops counting, everything above
+  // still does.
+  const middle = await say(them, '__middle')
+  await admin
+    .from('channel_members')
+    .upsert(
+      { channel_id: stage, user_id: me, last_read_message_id: middle },
+      { onConflict: 'channel_id,user_id' },
+    )
+  const readUpTo = await countHere()
+  await say(them, '__after')
+  const afterPointer = await countHere()
+  out.push({
+    verb: 'unread pointer',
+    ok: readUpTo === 0 && afterPointer === 1,
+    detail:
+      readUpTo === 0 && afterPointer === 1
+        ? 'pointer cleared the backlog; a newer message counted again'
+        : `${readUpTo} then ${afterPointer}, wanted 0 then 1`,
+  })
+
+  // It reports *the caller's* counts. `security invoker` is what makes that
+  // true — a `security definer` here would hand everyone the same numbers.
+  //
+  // The two users must expect *different* numbers or the probe proves nothing.
+  // At this point I have 1 unread (their `__after`); a second message from me
+  // takes them to 2, since mine never count for me and theirs never count for
+  // them. Equal counts would pass under a function that ignored the caller
+  // entirely, which is the bug being ruled out.
+  await say(me, '__mine2')
+  const mineNow = await countHere()
+
+  const asThem = createClient(URL!, ANON!, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const { data: link } = await admin.auth.admin.generateLink({
+    type: 'magiclink',
+    email: EMAIL_B,
+  })
+  const hash = link?.properties?.hashed_token
+  if (hash) {
+    await asThem.auth.verifyOtp({ type: 'magiclink', token_hash: hash })
+    const { data } = await asThem.rpc('unread_counts')
+    const theirs = ((data ?? []) as { channel_id: string; unread: number }[]).find(
+      (r) => r.channel_id === stage,
+    )
+    const theirCount = Number(theirs?.unread ?? -1)
+    const ok = mineNow === 1 && theirCount === 2
+    out.push({
+      verb: 'unread caller',
+      ok,
+      detail: ok
+        ? 'same channel, different answers per caller (1 vs 2)'
+        : `I see ${mineNow} and they see ${theirCount}, wanted 1 and 2`,
+    })
+    await asThem.auth.signOut()
+  } else {
+    out.push({ verb: 'unread caller', ok: false, detail: 'could not mint a session' })
+  }
+
+  await admin.from('channels').delete().eq('id', stage)
+  return out
+}
+
+/**
+ * `channel_members.last_read_message_id` — SPEC §1.4, the unread pointer.
+ *
+ * The interesting part is that the client **upserts**. A channel created after
+ * you joined the workspace has no `channel_members` row for you, and a plain
+ * UPDATE there affects zero rows without erroring — the badge would clear on
+ * screen and reappear on reload, which is exactly the sort of silent nothing
+ * DECISIONS #5 exists to catch. So this asserts both halves: the insert path
+ * for a brand-new pair, and the conflict path for an existing one.
+ */
+async function unreadPointerCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
+  const out: ProbeResult[] = []
+  const me = await ensureUser(EMAIL_A)
+
+  // A channel this user is deliberately not a member of yet.
+  const probeChannel = await ensureChannel(
+    '__unread_probe',
+    'temporary',
+    await ensureUser(EMAIL_B),
+  )
+  await admin
+    .from('channel_members')
+    .delete()
+    .eq('channel_id', probeChannel)
+    .eq('user_id', me)
+
+  const insert = await anon
+    .from('channel_members')
+    .upsert(
+      { channel_id: probeChannel, user_id: me, last_read_message_id: 7 },
+      { onConflict: 'channel_id,user_id' },
+    )
+    .select('last_read_message_id')
+  out.push({
+    verb: 'read ptr new',
+    ok: !insert.error && (insert.data?.length ?? 0) === 1,
+    detail: insert.error
+      ? insert.error.message
+      : `${insert.data?.length ?? 0} rows — a membership row was created on demand`,
+  })
+
+  const update = await anon
+    .from('channel_members')
+    .upsert(
+      { channel_id: probeChannel, user_id: me, last_read_message_id: 9 },
+      { onConflict: 'channel_id,user_id' },
+    )
+    .select('last_read_message_id')
+  const moved =
+    (update.data?.[0] as { last_read_message_id?: number } | undefined)
+      ?.last_read_message_id === 9
+  out.push({
+    verb: 'read ptr move',
+    ok: !update.error && moved,
+    detail: update.error
+      ? update.error.message
+      : moved
+        ? 'the existing row advanced rather than duplicating'
+        : `pointer did not advance: ${JSON.stringify(update.data)}`,
+  })
+
+  // The probe channel and its membership go away together.
+  await admin.from('channels').delete().eq('id', probeChannel)
+
+  return out
+}
+
+/**
  * `notifications` — SPEC §1.9, DECISIONS #15.
  *
  * The bell's rows are written by the *sender's* client rather than a trigger,
@@ -785,6 +998,8 @@ async function rlsCheck(email: string) {
 
   results.push(...(await attachmentsCheck(anon)))
   results.push(...(await storageCheck(anon)))
+  results.push(...(await unreadCountsCheck(anon)))
+  results.push(...(await unreadPointerCheck(anon)))
   results.push(...(await notificationsCheck(anon)))
   results.push(...(await accountsCheck()))
   results.push(...(await deniedWithoutSession()))
@@ -894,6 +1109,35 @@ async function deniedWithoutSession() {
       .delete()
       .eq('id', plantedId)).error)
   }
+
+  // `unread_counts()` is granted to `authenticated` only (DECISIONS #18) and
+  // reports whatever `auth.uid()` resolves to. Without a session that is null,
+  // so a leaked grant would hand a stranger the shape of every channel's
+  // traffic. Nothing else asserts the grant.
+  //
+  // Judged on being **refused**, not on returning nothing. The function is
+  // `security invoker`, so without a session `auth.uid()` is null and RLS
+  // hands back `[]` under every possible grant — `to anon`, `to public` or
+  // none. An earlier version of this probe checked the row count and printed
+  // PASS against a function `anon` could execute perfectly well, which is what
+  // let the missing revoke through (see 20260810170411). RLS makes almost
+  // everything look empty; only an error proves the grant.
+  const counts = await anon.rpc('unread_counts')
+  // `42501` specifically — insufficient_privilege. Any-error would also pass
+  // if the function were dropped or the schema cache were stale, which is not
+  // what this is asserting.
+  const refused = counts.error?.code === '42501'
+  out.push({
+    verb: 'anon counts',
+    ok: refused,
+    detail: refused
+      ? `refused (${counts.error?.message})`
+      : counts.error
+        ? `refused for the wrong reason: ${counts.error.code} — ${counts.error.message}`
+        : `EXECUTABLE without a session — returned ${
+            Array.isArray(counts.data) ? counts.data.length : 0
+          } rows; the grant is wrong even though RLS is hiding it`,
+  })
 
   // Storage has its own policy surface (DECISIONS #9), so it needs its own
   // signed-out probe: the four bucket-scoped policies are `to authenticated`,

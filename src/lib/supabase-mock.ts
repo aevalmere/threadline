@@ -174,6 +174,16 @@ const COLUMN_DEFAULTS: Record<string, Row> = {
   notifications: { actor_id: null, read_at: null },
 }
 
+/**
+ * Tables whose primary key is composite, so they have no surrogate `id` and
+ * name their own timestamp. Stamping `id`/`created_at` onto one of these would
+ * be the mock inventing a shape Postgres cannot produce — the same class of
+ * problem as the missing nullable columns above.
+ */
+const COMPOSITE_PK: Record<string, { timestamp: string }> = {
+  channel_members: { timestamp: 'joined_at' },
+}
+
 /** messages.id is a bigint identity; everything else is a uuid. */
 function nextId(table: string): unknown {
   if (table === 'messages') {
@@ -203,7 +213,7 @@ function emit(eventType: Payload['eventType'], table: string, row: Row, old: Row
   }
 }
 
-type Op = 'select' | 'insert' | 'update' | 'delete'
+type Op = 'select' | 'insert' | 'update' | 'delete' | 'upsert'
 
 class Query implements PromiseLike<{ data: unknown; error: null | { message: string; code?: string } }> {
   private filters: ((r: Row) => boolean)[] = []
@@ -212,11 +222,17 @@ class Query implements PromiseLike<{ data: unknown; error: null | { message: str
   private returning = false
   private mode: 'many' | 'single' | 'maybeSingle' = 'many'
 
+  /** Columns forming the conflict target, for an upsert. */
+  private conflict: string[] = []
+
   constructor(
     private table: string,
     private op: Op,
     private payload?: Row | Row[],
-  ) {}
+    onConflict?: string,
+  ) {
+    if (onConflict) this.conflict = onConflict.split(',').map((c) => c.trim())
+  }
 
   select(cols?: string) {
     // Column projection is ignored — returning extra fields is harmless here,
@@ -321,6 +337,38 @@ class Query implements PromiseLike<{ data: unknown; error: null | { message: str
         result.push(created)
         emit('INSERT', this.table, created)
       }
+    } else if (this.op === 'upsert') {
+      // Matches an existing row on the conflict columns and updates it,
+      // otherwise inserts. Reproduced because the unread pointer depends on
+      // it: a channel you have never opened has no channel_members row, and a
+      // mock that silently did nothing there would show a badge the real
+      // backend clears.
+      const incoming = Array.isArray(this.payload) ? this.payload : [this.payload!]
+      for (const row of incoming) {
+        const existing = this.conflict.length
+          ? db[this.table].find((r) =>
+              this.conflict.every((c) => String(r[c]) === String(row[c])),
+            )
+          : undefined
+        if (existing) {
+          const before = { ...existing }
+          Object.assign(existing, row)
+          result.push(existing)
+          emit('UPDATE', this.table, existing, before)
+        } else {
+          const composite = COMPOSITE_PK[this.table]
+          const created: Row = {
+            ...(composite
+              ? { [composite.timestamp]: new Date().toISOString() }
+              : { id: nextId(this.table), created_at: new Date().toISOString() }),
+            ...(COLUMN_DEFAULTS[this.table] ?? {}),
+            ...row,
+          }
+          db[this.table].push(created)
+          result.push(created)
+          emit('INSERT', this.table, created)
+        }
+      }
     } else if (this.op === 'update') {
       const patch = this.payload as Row
       const targets = this.rows()
@@ -424,6 +472,8 @@ export const mockSupabase = {
   from: (table: string) => ({
     select: (cols?: string) => new Query(table, 'select').select(cols),
     insert: (payload: Row | Row[]) => new Query(table, 'insert', payload),
+    upsert: (payload: Row | Row[], opts?: { onConflict?: string }) =>
+      new Query(table, 'upsert', payload, opts?.onConflict),
     update: (payload: Row) => new Query(table, 'update', payload),
     delete: () => new Query(table, 'delete'),
   }),
@@ -470,10 +520,45 @@ export const mockSupabase = {
    * Postgres functions. Only `email_for_username` exists (DECISIONS #14), and
    * it is the one thing the real client calls before it has a session.
    */
-  rpc: async (fn: string, args: Record<string, unknown>) => {
+  rpc: async (fn: string, args?: Record<string, unknown>) => {
+    /**
+     * `unread_counts()` — SPEC §1.4, reproduced from the SQL in
+     * `20260810160428_unread_counts.sql`.
+     *
+     * A second implementation of a rule, which this file usually refuses to be.
+     * It earns the exception because the alternative is worse: without it the
+     * sidebar has no badges at all offline, and a badge silently reading 0 is
+     * the exact bug that made the rule move into SQL (DECISIONS #18). Kept
+     * clause-for-clause with the migration, and both are covered — the SQL by
+     * `npm run seed`, this by `src/test/supabase-mock.test.ts`.
+     */
+    if (fn === 'unread_counts') {
+      const me = currentSession?.user.id
+      if (!me) return { data: [], error: null }
+
+      const rows = (db.channels ?? []).map((c) => {
+        const membership = (db.channel_members ?? []).find(
+          (m) => String(m.channel_id) === String(c.id) && String(m.user_id) === me,
+        )
+        // A missing membership row and a null pointer both mean "nothing read
+        // here" — the LEFT JOIN plus coalesce in the SQL.
+        const floor = Number(membership?.last_read_message_id ?? 0) || 0
+        const unread = (db.messages ?? []).filter(
+          (m) =>
+            String(m.channel_id) === String(c.id) &&
+            Number(m.id) > floor &&
+            String(m.author_id) !== me &&
+            m.deleted_at == null,
+        ).length
+        return { channel_id: String(c.id), unread }
+      })
+      return { data: rows, error: null }
+    }
+
     if (fn !== 'email_for_username') {
       return { data: null, error: { message: `mock: no such function ${fn}` } }
     }
+    args ??= {}
     const wanted = String(args.u ?? '')
       .trim()
       .toLowerCase()

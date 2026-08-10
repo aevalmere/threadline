@@ -37,7 +37,7 @@ One phase at a time. **A phase starts only after the user approves the previous 
 - [x] **Account system** — invite-code registration, username + password sign-in, profile editing *(added 2026-08-10 on Ethan's call; replaces magic links, DECISIONS #14)*
 - [x] @mentions writing `notifications` rows *(keys on `username`, so it follows the account system)*
 - [x] **Notification bell** — panel, mark-read, in-app toast, and a browser notification when the tab is hidden *(pulled forward from P5 on Ethan's call; DECISIONS #16)*
-- [ ] Unread badges via `last_read_message_id` *(batched writes — Non-negotiable 8)*
+- [x] Unread badges via `last_read_message_id` *(batched writes — Non-negotiable 8; counting moved into SQL, DECISIONS #18)*
 - [ ] Reconnect-and-resync — `WHERE id > last_seen` on channel rejoin *(also clears a known gap: a send that succeeds after the user leaves the channel leaves a stuck "sending" bubble if its row falls outside the first page on return)*
 - [ ] Infinite-scroll pagination, 50/page
 
@@ -117,7 +117,7 @@ These run in **every** gate. Added at the phase that creates the code:
 
 | Test | Phase added |
 |---|---|
-| Unread-count calculation | P0 |
+| Unread-count calculation | P0 → moved to `scripts/seed.ts` in P1 (DECISIONS #18) — asserted against `unread_counts()` clause by clause, not a unit test |
 | Message pagination / resync query | P0 |
 | Task-from-message payload + link creation | P2 |
 | Search query builder | P5 |

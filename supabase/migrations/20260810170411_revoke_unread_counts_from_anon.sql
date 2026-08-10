@@ -1,0 +1,43 @@
+-- P1 · take EXECUTE on unread_counts() away from `anon`
+--
+-- A new migration rather than an edit: 20260810160428 has already run
+-- (Non-negotiable 6).
+--
+-- **The bug.** That migration wrote
+--
+--   revoke all on function public.unread_counts() from public;
+--   grant execute on function public.unread_counts() to authenticated;
+--
+-- and I read the first line as "nobody but `authenticated` can call this". It
+-- is not. Supabase ships `alter default privileges in schema public grant all
+-- on functions to postgres, anon, authenticated, service_role`, so a function
+-- created by `postgres` in `public` carries an **explicit grant to the `anon`
+-- role**. Revoking from `PUBLIC` does not touch an explicit role grant, so
+-- `anon` kept EXECUTE.
+--
+-- **Why nothing leaked.** The function is `security invoker`, so a signed-out
+-- caller has `auth.uid() = null` and RLS on `public.channels` returns them no
+-- rows — the call succeeded and returned `[]`. That is obscurity, not access
+-- control: it holds only while no `to anon` policy exists anywhere, and this
+-- project has had one before (DECISIONS #10). SPEC §2.2 allows exactly one
+-- anon-reachable function, `email_for_username`, and this was silently a
+-- second.
+--
+-- **How it was missed, and the lesson.** The seed probe judged the call on
+-- *rows returned* rather than on being *refused*, so it printed PASS against a
+-- function `anon` could happily execute — the same hollow verification
+-- DECISIONS #5 was written for and #15 restated. `scripts/seed.ts` now asserts
+-- an error is returned. Any future signed-out probe of a function must assert
+-- refusal, never emptiness: RLS makes almost everything look empty.
+
+revoke execute on function public.unread_counts() from anon;
+
+-- `email_for_username` is deliberately callable by anon (DECISIONS #14) and is
+-- left exactly as it is. Stated here so a future reader does not "fix" it to
+-- match this one.
+
+-- **This binds this function object only.** A later migration that DROPs and
+-- re-CREATEs `unread_counts()` picks up Supabase's default `anon` grant again
+-- and silently undoes this. Any migration that recreates it must repeat the
+-- revoke; `scripts/seed.ts`'s `anon counts` probe asserts 42501 and will fail
+-- loudly if it does not.

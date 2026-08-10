@@ -746,3 +746,83 @@ attempt 1's failure, encoded in the return type rather than remembered.
   reintroduce the regression with all of `jump.test.ts` still green. The pure
   decision is pinned; the wiring around it is not. Stated so it is a known gap
   rather than a false sense of coverage.
+
+---
+
+## #18 — 2026-08-10 — Unread counting moves into SQL
+
+**Decision.** `public.unread_counts()` returns every channel's unread count for
+the caller. `unreadCount()` and `hasUnread()` are **deleted** from
+`src/lib/unread.ts`, along with their unit tests; the coverage moves to
+`scripts/seed.ts`, which now asserts SPEC §1.4 clause by clause against the live
+function. `nextLastReadMessageId()` and `unreadBadge()` stay — they are about
+the pointer and the rendering, not the count.
+
+**What was wrong, and why it could not be patched.** The first implementation
+counted in the browser, reusing the tested `unreadCount()`. A client can only
+count messages it has fetched, so it needs a window, and the window was anchored
+at the **oldest read-pointer across all channels**. One channel you never open
+holds that anchor near the start of the table forever — so the window fills with
+ancient rows, and **every badge reads 0 while unread messages sit in plain
+sight**. Reversing the anchor to newest-first fixes that case and breaks the
+mirror image. There is no correct single anchor; the shape was wrong.
+
+Counting where the rows are removes the anchor, the window, and the whole class
+of bug. It is one indexed `group by` over `messages (channel_id, id)`, run once
+per load and once per debounced burst of realtime traffic.
+
+**A LEFT JOIN, deliberately.** A channel created after you joined has no
+`channel_members` row at all. An INNER JOIN would omit it, so a brand-new
+channel full of messages would show no badge. Missing row and null pointer both
+mean "nothing read here".
+
+**`security invoker`, deliberately.** It must run as the caller so `auth.uid()`
+is *them*. A `security definer` here would report one person's unread counts to
+everybody — a data leak dressed as a badge. The seed proves the difference by
+asking as both seed users and requiring **different** answers for the same
+channel; equal answers would pass under a function that ignored the caller.
+
+**The cost: the rule is now stated twice.** Once in SQL, once in
+`supabase-mock.ts` so offline mode has badges at all. That is the duplication
+DECISIONS #15 refused for mentions, taken here because the alternative is no
+badges offline, and because a silently-zero badge is precisely the failure being
+fixed. Both copies are covered — the SQL by `npm run seed`, the mock by
+`src/test/supabase-mock.test.ts` — and they must change together.
+
+**A never-break path moved, not lost.** ROADMAP listed "Unread-count
+calculation" as a P0 unit test. It is now a seed assertion against the real
+function, which is strictly better evidence: it runs through the anon client,
+under RLS, against the thing that actually computes the number.
+
+**Caught in review**, before it reached production. Nothing in `tsc`, eslint,
+220 unit tests or a 31/31 seed run would have found it, because every one of
+those exercised either the pure helper or the write path — never the count as
+the user sees it. A freshly seeded workspace is too small to show the bug, so
+G1 would have passed too.
+
+**Two follow-on bugs, both found by the same reviewer, both worth recording.**
+
+*The debounces raced.* The refetch fired at 400ms and the pointer write at
+800ms, so the count was computed from a pointer that had not moved yet and
+overwrote the optimistic zero — permanently, because nothing re-runs a refresh
+when `channel_members` changes. `refresh()` now `await flush()` first, making
+the ordering explicit rather than emergent, and `reconcileUnread()` pins any
+channel whose write is still queued during the round trip. That function is
+pure and tested, which also gives this feature its first check that reaches the
+provider at all.
+
+*`revoke ... from public` did not revoke `anon`.* Supabase's default privileges
+grant EXECUTE on new `public` functions to `anon` explicitly, and revoking from
+`PUBLIC` leaves an explicit role grant untouched. `unread_counts` was therefore
+callable by a signed-out client — harmless only because `security invoker` plus
+RLS returned it nothing, which is obscurity rather than access control, and this
+project has had `to anon` policies before (#10). Fixed by
+`20260810170411_revoke_unread_counts_from_anon.sql`.
+
+**The generalisable lesson, and the reason it got through:** the signed-out
+probe judged the call on *rows returned*. RLS makes nearly everything look empty
+to `anon`, so an empty result proves nothing about a grant — the probe printed
+PASS against a function `anon` could execute happily. **A signed-out probe of a
+function must assert refusal, never emptiness.** #5 and #15 each said a version
+of this about tables; it is now said about functions too, having been learned a
+third time.

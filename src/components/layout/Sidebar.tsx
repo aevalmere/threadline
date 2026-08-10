@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { useChannels } from '@/lib/channels-context'
 import { useProfiles } from '@/lib/profiles-context'
+import { useUnread } from '@/lib/unread-context'
 
 function navClass({ isActive }: { isActive: boolean }) {
   return cn(
@@ -22,6 +23,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { profile, signOut } = useAuth()
   const { chat, forum, loading, error } = useChannels()
   const { avatarUrlFor } = useProfiles()
+  const { badgeFor } = useUnread()
 
   return (
     <div className="bg-sidebar text-sidebar-foreground border-sidebar-border flex h-full flex-col border-r">
@@ -50,7 +52,9 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                 className={navClass}
                 onClick={onNavigate}
               >
-                <HashIcon /> {c.name}
+                <HashIcon />
+                <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                <UnreadBadge count={badgeFor(c.id)} />
               </NavLink>
             ))
           )}
@@ -114,5 +118,18 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </Button>
       </div>
     </div>
+  )
+}
+
+/**
+ * The unread count beside a channel. Null when there is nothing unread, so a
+ * quiet sidebar stays quiet — SPEC §1.4.
+ */
+function UnreadBadge({ count }: { count: string | null }) {
+  if (!count) return null
+  return (
+    <span className="bg-primary text-primary-foreground ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none font-medium tabular-nums">
+      {count}
+    </span>
   )
 }

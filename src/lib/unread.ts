@@ -1,46 +1,20 @@
 /**
- * Unread-count calculation — SPEC.md §1.4.
+ * Read-pointer bookkeeping — SPEC.md §1.4.
  *
- * A never-break path (ROADMAP.md). Kept pure so it is testable without a
- * database: callers hand it rows they already hold in memory.
+ * **Counting itself is no longer here.** It moved to `unread_counts()` in the
+ * database (DECISIONS #18): a client can only count messages it has fetched,
+ * so any in-memory version needs a window, and every choice of window is wrong
+ * for some channel. What remains is the part that genuinely belongs on the
+ * client — deciding where the pointer should move to, and how to render it.
  *
- * Unread = messages with `id > last_read_message_id`, excluding the viewer's
- * own messages and soft-deleted rows. A null pointer means nothing has been
- * read yet, so everything counts.
+ * The counting rule is asserted against the live function by `scripts/seed.ts`,
+ * which is the never-break path ROADMAP records for it.
  */
 
 export interface UnreadMessage {
   id: number
   author_id: string
   deleted_at: string | null
-}
-
-export interface UnreadInput {
-  messages: readonly UnreadMessage[]
-  /** `channel_members.last_read_message_id` — null means never read. */
-  lastReadMessageId: number | null
-  /** The signed-in user; their own messages are never unread to them. */
-  viewerId: string
-}
-
-export function unreadCount({
-  messages,
-  lastReadMessageId,
-  viewerId,
-}: UnreadInput): number {
-  const floor = lastReadMessageId ?? 0
-  let count = 0
-  for (const m of messages) {
-    if (m.id <= floor) continue
-    if (m.deleted_at != null) continue
-    if (m.author_id === viewerId) continue
-    count++
-  }
-  return count
-}
-
-export function hasUnread(input: UnreadInput): boolean {
-  return unreadCount(input) > 0
 }
 
 /**
@@ -68,4 +42,35 @@ export function nextLastReadMessageId(
 export function unreadBadge(count: number, cap = 99): string | null {
   if (count <= 0) return null
   return count > cap ? `${cap}+` : String(count)
+}
+
+/**
+ * Apply server counts while respecting reads that have not been persisted yet.
+ *
+ * `unread_counts()` answers from `channel_members.last_read_message_id`, and
+ * that pointer is written on a debounce (Non-negotiable 8). So a refresh can
+ * resolve against a pointer that is *behind* what the viewer has actually
+ * read, and hand back a non-zero count for the channel they are looking at.
+ *
+ * That is not a transient blip. Nothing re-triggers a refresh once the pointer
+ * write lands — the subscription watches `messages`, not `channel_members` —
+ * and `markRead` will not fire again while the highest loaded id is unchanged,
+ * so the badge sticks for the rest of the session.
+ *
+ * A channel is pinned to 0 whenever the read this session has recorded is
+ * ahead of what the database has **confirmed** — which covers a write that is
+ * queued, one that is in flight, and one that failed and is waiting to retry.
+ * Keying it on "queued" alone was not enough: the queue is emptied before the
+ * upsert is awaited, so a sent-but-uncommitted write sat in no set at all and
+ * left a phantom badge on the channel being read.
+ */
+export function reconcileUnread(
+  serverCounts: readonly { channel_id: string; unread: number }[],
+  pendingChannels: ReadonlySet<string>,
+): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const row of serverCounts) {
+    out.set(row.channel_id, pendingChannels.has(row.channel_id) ? 0 : Number(row.unread) || 0)
+  }
+  return out
 }

@@ -51,6 +51,7 @@ import {
   splitMentions,
 } from '@/lib/mentions'
 import { splitThreads, threadRootFor } from '@/lib/threads'
+import { useUnread } from '@/lib/unread-context'
 import { useMessages, type Message } from '@/lib/useMessages'
 import { useSignedUrls } from '@/lib/useSignedUrls'
 import type { PendingMessage } from '@/lib/pending'
@@ -82,6 +83,7 @@ export default function ChannelView() {
   const { channels, loading: channelsLoading } = useChannels()
   const { nameFor, avatarUrlFor } = useProfiles()
   const { authorId } = useAuth()
+  const { markRead } = useUnread()
   const {
     messages,
     loadedChannelId,
@@ -137,6 +139,24 @@ export default function ChannelView() {
   useLayoutEffect(() => {
     stickToBottom.current = true
   }, [channelId])
+
+  /**
+   * Looking at a channel is what marks it read — SPEC §1.4.
+   *
+   * Guarded on `loadedChannelId === channelId` for the same reason `resolveJump`
+   * is (DECISIONS #17): this component re-renders without remounting on a
+   * channel switch, so for one commit `messages` still holds the *previous*
+   * channel's rows. Advancing the new channel's pointer with those ids would
+   * mark messages read that were never displayed — and the pointer never moves
+   * backwards, so it would not be recoverable.
+   *
+   * The write itself is debounced inside the provider (Non-negotiable 8).
+   */
+  useEffect(() => {
+    if (!channelId || loading || loadedChannelId !== channelId) return
+    if (messages.length === 0) return
+    markRead(channelId, messages)
+  }, [channelId, loadedChannelId, loading, messages, markRead])
 
   // Follow new messages only when already at the bottom — otherwise reading
   // scrollback would be yanked away every time someone types.
