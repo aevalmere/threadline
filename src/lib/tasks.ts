@@ -191,6 +191,46 @@ export function statusPatch(
   return { status: next, completed_at: next === 'done' ? nowIso : null }
 }
 
+/** What the task form edits — the camelCase client-side face of a Task. */
+export interface TaskFields {
+  title: string
+  status: TaskStatus
+  assigneeId: string | null
+  dueDate: string | null
+  description: string
+}
+
+/** Form state for an existing task, for edit mode. */
+export function fieldsFromTask(task: Task): TaskFields {
+  return {
+    title: task.title,
+    status: task.status,
+    assigneeId: task.assignee_id,
+    dueDate: task.due_date,
+    description: plainFromRich(task.description_rich),
+  }
+}
+
+/**
+ * The patch an edit writes. A status transition carries `completed_at` with
+ * it (statusPatch); an edit that leaves status alone must not touch
+ * `completed_at`, or editing a done task's title would re-stamp its
+ * completion date.
+ */
+export function patchFromFields(
+  fields: TaskFields,
+  previousStatus: TaskStatus,
+  nowIso: string,
+): Partial<Task> {
+  return {
+    title: fields.title,
+    assignee_id: fields.assigneeId,
+    due_date: fields.dueDate,
+    description_rich: richFromPlain(fields.description),
+    ...(fields.status === previousStatus ? {} : statusPatch(fields.status, nowIso)),
+  }
+}
+
 /**
  * Minimal BlockNote-shaped paragraphs from plain text, and back. P2's modal
  * is a plain textarea; P4's BlockNote editor loads this same column without a

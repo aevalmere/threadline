@@ -4,10 +4,12 @@ import {
   POSITION_STEP,
   TITLE_MAX,
   appendPosition,
+  fieldsFromTask,
   groupByStatus,
   isOverdue,
   linkForTask,
   myTasks,
+  patchFromFields,
   plainFromRich,
   positionBetween,
   richFromPlain,
@@ -213,6 +215,44 @@ describe('statusPatch', () => {
 
   it('clears completed_at when a task is reopened', () => {
     expect(statusPatch('doing', NOW)).toEqual({ status: 'doing', completed_at: null })
+  })
+})
+
+describe('fieldsFromTask / patchFromFields', () => {
+  const NOW = '2026-08-18T12:00:00.000Z'
+
+  it('round-trips a task through the form without changing it', () => {
+    const t = task({
+      assignee_id: BOB,
+      due_date: '2026-08-25',
+      description_rich: richFromPlain('two\nlines'),
+    })
+    const patch = patchFromFields(fieldsFromTask(t), t.status, NOW)
+    expect(patch).toEqual({
+      title: t.title,
+      assignee_id: BOB,
+      due_date: '2026-08-25',
+      description_rich: richFromPlain('two\nlines'),
+    })
+  })
+
+  it('leaves completed_at alone when status did not change', () => {
+    // Editing a done task's title must not re-stamp its completion date.
+    const patch = patchFromFields(fieldsFromTask(task({ status: 'done' })), 'done', NOW)
+    expect('completed_at' in patch).toBe(false)
+    expect('status' in patch).toBe(false)
+  })
+
+  it('carries completed_at with a status transition', () => {
+    const fields = { ...fieldsFromTask(task()), status: 'done' as const }
+    const patch = patchFromFields(fields, 'todo', NOW)
+    expect(patch.status).toBe('done')
+    expect(patch.completed_at).toBe(NOW)
+  })
+
+  it('clearing the description writes null, not empty blocks', () => {
+    const fields = { ...fieldsFromTask(task()), description: '' }
+    expect(patchFromFields(fields, 'todo', NOW).description_rich).toBeNull()
   })
 })
 
