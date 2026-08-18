@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest run",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "blast": "tsx scripts/blast.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.6",
