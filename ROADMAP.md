@@ -43,6 +43,10 @@ One phase at a time. **A phase starts only after the user approves the previous 
 
 **GATE G1** — Two browsers: message appears in <1s both directions · hard refresh mid-thread loses nothing · network killed 30s then restored resyncs missed messages · image upload renders a thumbnail · unread badges correct across both users.
 
+> **Gate run 2026-08-18 — machine side PASS.** `npm run build`, `npm run lint`, `npm run test` (233 tests / 12 files) all exit 0. `npm run seed` ran green against live Supabase: 38/38 probes, covering the four-verb anon RLS check, storage signed-vs-public reads, `unread_counts()` clause by clause, notification kind/`read_at` constraints, username uniqueness/format/trigger, and signups-disabled. Reviewer subagent on the full phase diff (74 files, +12,582/−457) returned **PASS** with six non-blocking notes.
+>
+> **All five acceptance items need two browsers and a killed network, so none of them is PASS on Claude's authority** — they are the user's production checklist. The gate closes when Ethan runs it.
+
 ---
 
 ## P2 — Tasks · Aug 18–20 *(orig. Aug 14–16)*
