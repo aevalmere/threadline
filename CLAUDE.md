@@ -48,9 +48,9 @@ No billing. No roles/permissions (one trusted workspace; auth is the only wall).
 2. RLS is ON for every table, with exactly one blanket policy per table: any authenticated user has full access. No per-row ownership policies, no policy mazes — we are a trusted team. The service_role key never appears in client code or the repo. Verify all four verbs (select/insert/update/delete) work through the anon client in the seed test.
 3. Library locks are absolute (see LOCKED STACK). No swaps, no additions of overlapping libraries, no state-management framework unless a written entry in DECISIONS.md justifies it.
 4. SPEC.md is the source of truth for schema and product behavior; ROADMAP.md for sequencing. Any deviation gets updated in the same commit that deviates. Never re-litigate a settled decision from memory — read the file.
-5. Nothing is "done" on your say-so. Every task ends with a verifiable check: a passing test, a passing build, or a screenshot/manual-step list I can run. State the check explicitly when you claim completion.
+5. Nothing is "done" on your say-so — but verification is **batched, not per-item** (DECISIONS #21). An item may be committed on a smoke check alone: a typecheck, or one targeted test when it is cheap. What must end verified is the batch: build + lint + full tests + `npm run seed` + scripted live probes all green, with evidence attached per gate item. No phase is complete without that full pass, and the checks are stated explicitly when completion is claimed.
 6. Small diffs, frequent commits, conventional messages referencing the ROADMAP item. After two failed attempts at the same bug: stop, revert to last green commit, restate the problem in DECISIONS.md, and re-approach fresh. Never big-bang refactor. Never git push --force. Never edit or delete a migration that has already run in production — write a new one.
-7. Risky diffs — anything touching schema/migrations, auth, or realtime — must be reviewed by the reviewer subagent (fresh context) and return PASS before merging. You never review your own risky work.
+7. Risky diffs — anything touching schema/migrations, auth, or realtime — still require a fresh-context reviewer-subagent PASS, but the review is **batched: one run per session over the accumulated risky diff**, at bulk-verify time (DECISIONS #21). Exception: migrations are reviewed **before** `npx supabase db push` — an applied migration cannot be edited, so it never waits for the batch. You never review your own risky work.
 8. Debounce typing/presence broadcasts client-side (≥300ms) and batch unread updates — protect the free tier's realtime budget.
 9. Secrets live in .env.local and platform env vars only. .env* is gitignored in the first commit.
 10. Visual polish is timeboxed. I must give pixel-specific instructions or default styling stands. Never iterate on "make it feel better."
@@ -66,15 +66,17 @@ No billing. No roles/permissions (one trusted workspace; auth is the only wall).
 
 **Migrations stay CLI-managed and repo-owned.** `supabase/migrations/` is the source of truth. If the MCP's `apply_migration` is used, the version it records must match the repo filename exactly, or `supabase db push` will later try to re-apply. When in doubt, use `npx supabase db push`.
 
-## Workflow loop — every task, every session
+## Workflow loop — batch sessions
 
-1. Pick the single next unchecked `ROADMAP.md` item (**one in flight at a time**). Restate it + its verification check.
-2. **Plan first (plan mode) for anything touching schema, auth, or realtime.**
-3. Implement the smallest vertical slice. Keep the diff small.
-4. Verify per rule 5. Risky diff → reviewer subagent per rule 7.
-5. Commit, tick `ROADMAP.md`, log any decision in `DECISIONS.md`. Then next item.
-6. Between unrelated tasks, clear context — **state lives on disk, not in the conversation.**
-7. Parallel work is allowed ONLY for items in the same phase touching disjoint files (e.g. P5 search vs. notification bell) via separate worktrees — otherwise strictly sequential. **When in doubt, sequential.**
+*Rewritten 2026-08-18 on Ethan's call — DECISIONS #21. The one-item-one-verify loop with context clears between tasks is retired.*
+
+1. **A session takes a batch, not an item** — by default everything left in the current phase. Restate the batch and its gate up front.
+2. **Plan once per batch.** If the batch touches schema, auth, or realtime anywhere, plan the whole batch in plan mode at session start — one approval covers every item in it. No per-item plans.
+3. Implement item by item — smallest vertical slice, commit per item with conventional messages, tick `ROADMAP.md` as you go. Per-item verification is a smoke check only (rule 5); do not stop to full-verify mid-batch. Parallel worktrees stay allowed only for same-phase items touching disjoint files; when in doubt, sequential.
+4. **Bulk verify at batch end** (rule 5), then **one reviewer run over the whole batch diff** (rule 7). Migrations are the standing exception — reviewed before every `db push`, mid-batch.
+5. **Two human touchpoints per phase, no more.** The session-start plan approval (only when the batch is risky) and the phase-end checklist. Everything Claude can reach with existing access — MCP, CLI, the service key locally — Claude does. The checklist carries only what is dashboard-only, classifier-blocked, or genuinely human (two devices, a phone, visual judgment). Mid-session asks are queued onto the checklist, never blocking.
+6. **The human checklist does not block the machine.** Machine gate PASS → the next phase starts immediately. Ethan runs the checklist when convenient; anything it surfaces is a priority-one bug, fixed before new features. Still blocking: TEAM BETA entry at G2 (inviting the team is inherently Ethan's) and the G6 ship checks.
+7. Unchanged from the old loop: after two failed attempts at the same bug — stop, revert to last green, restate the problem in `DECISIONS.md`, re-approach fresh. State lives on disk; keep `ROADMAP.md` ticks current per item and batch the `DECISIONS.md`/`BACKLOG.md` writing to batch end.
 
 ## Pre-agreed fallbacks
 

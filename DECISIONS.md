@@ -965,3 +965,53 @@ in. It owns nothing — 0 messages, notifications, channels and memberships — 
 removing it cascades nothing. Claude was blocked from running the delete by the
 permission classifier, correctly: it is irreversible and touches production
 auth. Ethan runs it.
+
+---
+
+## #21 — 2026-08-18 — Workflow rewrite: batch sessions, bulk verification, two human touchpoints
+
+**Decision.** Ethan retired the one-item-one-verify loop. From now on:
+
+- **A session takes a batch** — by default everything left in the current
+  phase — instead of a single ROADMAP item with context clears between tasks.
+- **Verification is bulked at batch end.** Items are committed mid-batch on a
+  smoke check only (typecheck, or one cheap targeted test); the full battery —
+  build, lint, full tests, `npm run seed`, scripted live probes, and **one**
+  reviewer-subagent run over the whole batch diff — runs once, at the gate.
+- **Human interaction compresses to two points per phase**: one plan approval
+  at session start (only when the batch touches schema/auth/realtime — one
+  plan covers every item in it), and one consolidated checklist at phase end.
+  Mid-session asks are queued onto that checklist, never blocking; anything
+  Claude can reach with existing access (MCP, CLI, service key locally),
+  Claude does.
+- **The user checklist no longer blocks the next phase.** Machine gate PASS
+  starts the next phase immediately; whatever the checklist later surfaces is
+  a priority-one bug, fixed before new features.
+
+**Kept, deliberately.** Migrations are still reviewed *before* every
+`db push` — an applied migration cannot be edited (Non-negotiable 6), so it is
+the one artifact that never waits for the batch. Still blocking on the human:
+TEAM BETA entry at G2 (inviting the team is inherently Ethan's) and the G6
+ship checks. Commit-per-item, conventional messages, the two-failed-attempts
+revert rule, and per-item ROADMAP ticks all survive unchanged.
+
+**Why.** Thirteen days to ship. The old loop's costs had become the dominant
+ones: per-item verification re-ran the same battery many times a phase;
+per-diff reviewer runs re-read overlapping context; context clears threw away
+a warm working set every task or two; and gates parked all machine work on a
+human checklist the human ran days later — G1's checklist sat idle while P2
+was forbidden to start. The failure the old loop guarded against (a bad item
+buried under later work) is covered more cheaply by commit-per-item, which
+keeps bisect and revert one command each.
+
+**Accepted risks, named.** Bulk verification finds an early-batch bug late,
+with more code on top — mitigated by commit-per-item and the revert rule. An
+async human gate means a phase can build on something the checklist would
+have caught — mitigated by preferring scripted probes over manual steps for
+everything machine-checkable (realtime delivery, resync, RLS), and by
+checklist findings outranking new features.
+
+**Immediate effect.** G1's machine-side PASS (ROADMAP, 2026-08-18) unblocks
+P2 by itself; Ethan's three G1 items stay open as async. Rewritten in this
+commit: CLAUDE.md rules 5 and 7 and the workflow loop, ROADMAP's header and
+G1 note, `.claude/commands/gate.md`, `.claude/commands/resume.md`.

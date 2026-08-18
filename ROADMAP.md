@@ -4,7 +4,7 @@
 
 **Ship: August 31, 2026 — non-negotiable.**
 
-One phase at a time. **A phase starts only after the user approves the previous gate.** One item in flight at a time. Every gate ends with a manual verification checklist the user runs in production.
+One phase at a time. **A phase starts as soon as the previous gate's machine side passes** *(rewritten 2026-08-18, DECISIONS #21 — gates no longer wait on the user)*. Sessions take a whole batch — by default the rest of the phase — with bulk verification at batch end. Every gate still ends with a manual production checklist for the user, but it runs asynchronously: what it surfaces comes back as priority-one bugs; it does not hold the next phase. Still blocking: TEAM BETA entry at G2 and the G6 ship checks.
 
 > **Dates rebased 2026-08-09.** The original plan dated P0 as Aug 5–6; work actually began Aug 9. Every phase, gate, and the ship date are unchanged — the three days came out of slack, not scope. Original dates in parentheses.
 
@@ -53,6 +53,8 @@ One phase at a time. **A phase starts only after the user approves the previous 
 > 3. **Confirm `VITE_MOCK_BACKEND` is not set in the Cloudflare Pages project.** It must be absent or `false` there — see DECISIONS #20 for why a mock build silently drops supabase-js.
 >
 > P2 does not start until item 1 passes.
+>
+> **Superseded 2026-08-18 — DECISIONS #21.** Under the batch workflow the machine-side PASS above unblocks P2 by itself. Items 1–3 stay open on Ethan's async checklist; anything item 1 surfaces is a priority-one bug, fixed before new P2 features.
 
 ---
 
