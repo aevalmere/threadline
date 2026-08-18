@@ -12,6 +12,30 @@
       "sourceType": "github",
       "skillPath": "skills/supabase-postgres-best-practices/SKILL.md",
       "computedHash": "128fac78002d916c8ca908245d398e634f540d8bcf20915b2b2359aeb18eba59"
+    },
+    "webforge-noslop": {
+      "source": "forge.zip (Ethan, 2026-08-18) packs/webforge",
+      "sourceType": "local-bundle",
+      "skillPath": "skills/webforge-noslop/SKILL.md",
+      "computedHash": "2538711a4be89b3090c09c1c40ff9b18ae1a3bce362e52ac23eb775f7888b97c"
+    },
+    "webforge-ui": {
+      "source": "forge.zip (Ethan, 2026-08-18) packs/webforge",
+      "sourceType": "local-bundle",
+      "skillPath": "skills/webforge-ui/SKILL.md",
+      "computedHash": "61c9dc41b25bde31917329df1abca65b7ede889405757355ae15550020957963"
+    },
+    "webforge-explain": {
+      "source": "forge.zip (Ethan, 2026-08-18) packs/webforge",
+      "sourceType": "local-bundle",
+      "skillPath": "skills/webforge-explain/SKILL.md",
+      "computedHash": "b4fa55ceb853aed74b0ce6f93e31bc880c97634495e4d39034f1452c914d1c84"
+    },
+    "webforge-perf": {
+      "source": "forge.zip (Ethan, 2026-08-18) packs/webforge",
+      "sourceType": "local-bundle",
+      "skillPath": "skills/webforge-perf/SKILL.md",
+      "computedHash": "4ea90127d4ed5b6d3cae3ef6e6f678218291df426becc7acf9faca2887e34e3a"
     }
   }
 }

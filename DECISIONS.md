@@ -1015,3 +1015,58 @@ checklist findings outranking new features.
 P2 by itself; Ethan's three G1 items stay open as async. Rewritten in this
 commit: CLAUDE.md rules 5 and 7 and the workflow loop, ROADMAP's header and
 G1 note, `.claude/commands/gate.md`, `.claude/commands/resume.md`.
+
+---
+
+## #22 — 2026-08-18 — FORGE audit: 4 skills vendored, 18 rejected
+
+**Decision.** Ethan supplied `forge.zip` — three Claude Code skill packs
+(webforge / appforge / ccforge, 36 skills) — with "build using this". A
+six-agent audit read every SKILL.md and reference against CLAUDE.md before
+anything was installed. Verdict: vendor **webforge-noslop, webforge-ui,
+webforge-explain, webforge-perf** under the established pattern
+(`.agents/skills/` committed, junctions into `.claude/skills/`, hashes pinned
+in `skills-lock.json`); reject the other eighteen. The bundle's scripts
+(install.sh, scan_skills.sh, canary-hook.sh, validate.py) were read line by
+line first — all clean, none are run or registered.
+
+**Why those four.** They are advisory craft, not machinery, and they pull in
+the direction this project already faces: noslop's terse UI copy matches the
+standing no-explanatory-UI-copy rule; ui's interaction-state and a11y
+checklists (keyboard alternative for drag-only interactions, hover gating,
+the three distinct empty states, disable-double-submit) are directly load-
+bearing for P2's kanban; explain's not-done/not-verified reporting shape
+matches rule 5; perf's no-work-without-a-before-number gate matches rule 10.
+
+**Why the eighteen died.** Three failure classes, with receipts:
+- **Wrong stack.** webforge-scaffold/-server/-ship/-verify and the
+  orchestrator's stack defaults are Next.js-first (App Router scaffolds,
+  `NEXT_PUBLIC_*` rules, Server Actions auth advice) and their gates mandate
+  Playwright/axe/size-limit/Lighthouse — all forbidden additions under
+  Non-negotiable 3. appforge is mobile/desktop (non-goals).
+- **Competing machinery.** The orchestrator/loop/skillmap trio runs its own
+  FRAME→DELIVER lifecycle, its own defect ledger and DECISIONS.md/TODO.md
+  under `.claude/webforge-loop/`, and its own gate definitions — a second
+  workflow sitting beside CLAUDE.md's loop and `/gate`, splitting the record.
+  webforge-taste mandates the exact make-it-feel-better iteration
+  Non-negotiable 10 bans, and brands our deliberate shadcn defaults a defect.
+- **Behavior takeover.** The packs carry a standing rule to end every reply
+  with a `[skills: …]` receipt line, an instruction to append their routing
+  file to `~/.claude/CLAUDE.md` (self-propagating config), directives to hide
+  process from the user ("ship the artifact, not the machinery" — the inverse
+  of rule 5), a forced pre-work skill chain, and ccforge-wire's hook/settings
+  wiring. None of that runs here. CLAUDE.md's skills section now carries the
+  standing overrides (conflict entry 3), including: never emit the receipt
+  line.
+
+**What was kept from the rejects anyway.** Their genuinely good one-liners
+were folded into the P2 build notes without installing anything: pre-register
+test assertions before implementing; attack the data path before the visual
+layer; never weaken a test in the change that turns its gate green; a
+gate-defining file changing in the same diff that flips the gate is a
+BLOCKER; eslint exit 2 means the gate is broken, not the code; idempotency
+guard on create-task-from-message double-submit.
+
+**Cost.** ~650k subagent tokens for the audit + code-map workflows. The four
+vendored skills auto-trigger from their descriptions; if their advice ever
+fights CLAUDE.md, CLAUDE.md wins (skills section, standing rule).
