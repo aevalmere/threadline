@@ -202,7 +202,7 @@ P3 also adds the deferred `messages.post_id` FK.
 | `position` | `float8 not null` | fractional ordering (§1.6) |
 | `source_message_id` | `bigint` | → `messages(id)` on delete set null |
 | `source_post_id` | `uuid` | → `posts(id)` on delete set null; FK added in P3 |
-| `created_by` | `uuid` | → `profiles(id)` |
+| `created_by` | `uuid` | → `profiles(id)` on delete set null |
 | `created_at` | `timestamptz not null default now()` | |
 | `completed_at` | `timestamptz` | |
 
@@ -216,7 +216,7 @@ Storage bucket `attachments`, **10 MB cap**, images render as inline thumbnails.
 The bucket is **private**. Reads go through short-lived signed URLs, so an uploaded file is unreadable without a session — "auth is the only wall" (§1.1) covers files too. The 10 MB cap is set on the bucket *and* checked client-side: the bucket is the real wall, the client check just avoids a wasted upload. `storage.objects` carries four bucket-scoped policies rather than §2.2's single blanket policy, because it is one table holding every bucket. See DECISIONS #9.
 
 #### `links` — P2
-`id uuid pk`, `source_type text`, `source_id text`, `target_type text`, `target_id text`, `kind text`, `created_at timestamptz default now()`.
+`id uuid pk`, `source_type text not null`, `source_id text not null`, `target_type text not null`, `target_id text not null`, `kind text not null`, `created_at timestamptz not null default now()`. An edge missing either endpoint or its kind is garbage; `notifications` set the same not-null precedent for its polymorphic columns.
 **Index on `(target_type, target_id)`** — this is what makes the backlink panel one query.
 
 #### `notifications` — P1 (rows **and** bell UI — pulled forward, DECISIONS #16)

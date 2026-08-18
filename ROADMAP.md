@@ -77,7 +77,7 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 
 - [ ] Forum-kind channels
 - [ ] Posts with title + tags
-- [ ] Comments reusing the `messages` machinery *(+ the deferred `messages.post_id` FK)*
+- [ ] Comments reusing the `messages` machinery *(+ the deferred `messages.post_id` FK, **and** the deferred `tasks.source_post_id` → `posts` FK — SPEC §2.3, noted in the P2 migration)*
 - [ ] Tag filtering
 - [ ] Create-task-from-post
 
