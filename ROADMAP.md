@@ -46,6 +46,13 @@ One phase at a time. **A phase starts only after the user approves the previous 
 > **Gate run 2026-08-18 — machine side PASS.** `npm run build`, `npm run lint`, `npm run test` (233 tests / 12 files) all exit 0. The first build ran with `VITE_MOCK_BACKEND=true` still in `.env.local`, which tree-shakes supabase-js out entirely (411 kB); rebuilt against the real client it is **631 kB / 186 kB gzip**, over Vite's 500 kB warning line. Production was never affected — Cloudflare builds from GitHub and never sees `.env.local` — but judge bundle size only from a `false` build. `npm run seed` ran green against live Supabase: 38/38 probes, covering the four-verb anon RLS check, storage signed-vs-public reads, `unread_counts()` clause by clause, notification kind/`read_at` constraints, username uniqueness/format/trigger, and signups-disabled. Reviewer subagent on the full phase diff (74 files, +12,582/−457) returned **PASS** with six non-blocking notes.
 >
 > **All five acceptance items need two browsers and a killed network, so none of them is PASS on Claude's authority** — they are the user's production checklist. The gate closes when Ethan runs it.
+>
+> **Waiting on Ethan (2026-08-18), in order:**
+> 1. **Run the G1 checklist** on https://threadline-cc0.pages.dev — two windows, one incognito, signing in as two different users. `npm run blast` produces the 250-message backlog step 6 needs; `npm run blast -- --clean` removes the rows afterwards.
+> 2. **Delete the leftover `guest` auth user** — DECISIONS #13 dropped its policies but left the account, which still has a password and can sign in. It owns nothing, so nothing cascades. Dashboard → Authentication → Users → `guest@threadline.local` → Delete. Claude was blocked from doing this by the permission classifier, correctly; see DECISIONS #20.
+> 3. **Confirm `VITE_MOCK_BACKEND` is not set in the Cloudflare Pages project.** It must be absent or `false` there — see DECISIONS #20 for why a mock build silently drops supabase-js.
+>
+> P2 does not start until item 1 passes.
 
 ---
 

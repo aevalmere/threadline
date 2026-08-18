@@ -898,3 +898,70 @@ Item 4's second half is a known weakness: any arriving message consumes the
 scroll anchor, so a page landing right after one still jumps. Narrow, cosmetic,
 self-corrects on the next scroll — parked rather than fixed, because the fix is
 a per-request anchor and this is the last item before the G1 gate.
+
+---
+
+## #20 — 2026-08-18 — G1 gate prep: the resync latch, a cold-start trap, and two things left alone
+
+The P1 gate ran green on the machine side — build, lint, 233 tests, and a full
+`npm run seed` (38/38 probes) against the live project — and the reviewer
+subagent passed the whole phase diff. Three things came out of it worth
+recording, because two of them are traps that will otherwise be rediscovered.
+
+### The `resyncing` latch is now `try/finally`
+
+`resync()` set its re-entrancy latch and cleared it on each of three exit
+paths. All three were correct, so this was never a live bug. But the failure
+mode if one were ever missed is the worst kind: a throw inside `absorb` or
+`sweepPending` latches `resyncing.current` at `true` and that channel silently
+stops resyncing on every later reconnect, `online` and tab focus — no error, no
+UI, until the user happens to switch channels. `UnreadProvider` already guards
+the identical latch with `finally` (`src/lib/unread-provider.tsx:130-161`), so
+this is now consistent rather than novel.
+
+Reviewed fresh and PASSed against the specific risk that a `break` had become a
+`return`: that would skip `await sweepPending()` and reintroduce the stuck
+"sending" bubble #19 exists to fix. Both `break`s survived.
+
+The reviewer also noted a pre-existing race this diff neither creates nor
+worsens: an abandoned drain for channel A clears a latch now owned by a resync
+for channel B, permitting one redundant concurrent drain. `mergeMessages`
+dedupes it. Left alone deliberately.
+
+### A just-resumed Supabase project does not do realtime for a while
+
+A paused project that has been resumed answers REST and auth almost at once,
+but replication takes appreciably longer. The symptom is precisely the one that
+reads as a broken build: the page loads, sign-in works, messages send and
+persist — and nothing arrives in the second browser.
+
+A probe replicating `useMessages`'s exact subscription (`messages:<id>` topic,
+`event: '*'`, `channel_id=eq.<uuid>` filter, no explicit `setAuth`) timed out at
+20 s and then passed comfortably at 45 s minutes later, delivering both INSERT
+and UPDATE. Nothing in the app was wrong. **Before debugging silent realtime,
+confirm the project has been warm for a few minutes.**
+
+### `VITE_MOCK_BACKEND=true` makes every bundle measurement a lie
+
+With the mock flag on, Vite statically folds `MOCK_BACKEND` to `true`,
+`createClient` becomes unreachable and **supabase-js is tree-shaken out
+entirely**: 411 kB. The same commit built with the flag `false` is 631 kB /
+186 kB gzip. Production was never affected — Cloudflare builds from GitHub and
+never sees `.env.local` — but a bundle figure from a mock build means nothing.
+
+### Two things deliberately not fixed
+
+**The 631 kB bundle stays over Vite's 500 kB warning line, and the warning stays
+un-silenced.** The mock is only ~2–3% of it (and cannot tree-shake anyway — it
+has a module-level `const db = load()`); the weight is React, supabase-js,
+Radix and cmdk, which is ordinary. At 186 kB gzip for 5–30 internal users this
+is not a real problem, and raising `chunkSizeWarningLimit` now would blind us
+in P4 exactly when BlockNote lands and the number starts to matter. Parked in
+BACKLOG.
+
+**The leftover `guest` auth user is not deleted yet.** DECISIONS #13 dropped the
+`anon` policies but left the account, which still has a password and can sign
+in. It owns nothing — 0 messages, notifications, channels and memberships — so
+removing it cascades nothing. Claude was blocked from running the delete by the
+permission classifier, correctly: it is irreversible and touches production
+auth. Ethan runs it.

@@ -331,58 +331,61 @@ export function useMessages(channelId: string | undefined) {
     resyncing.current = true
     const epoch = epochRef.current
 
-    // Drain only once this channel's first page has landed. Until then the
-    // cursor is 0 and walking forward would pull the channel's *oldest* rows,
-    // then merge the newest page on top — the mid-list hole this loop exists to
-    // avoid. Keyed on `loadedChannelId`, not on the cursor being 0: a channel
-    // that is legitimately empty also has cursor 0, and it still needs
-    // reconnect to fetch what arrived while the socket was down. That case is
-    // exactly G1's "network killed 30s then restored".
-    if (loadedChannelIdRef.current !== channelId) {
-      resyncing.current = false
-      return
-    }
+    // `finally` rather than a reset on each exit path. Every path below does
+    // currently clear the latch, but a throw in `absorb` or `sweepPending`
+    // would leave it stuck `true` — and a stuck latch is silent: this channel
+    // would stop resyncing on every later reconnect, `online` and tab focus,
+    // with no error surfaced, until the user happened to switch channels.
+    // `UnreadProvider.refresh` already guards the identical latch this way.
+    try {
+      // Drain only once this channel's first page has landed. Until then the
+      // cursor is 0 and walking forward would pull the channel's *oldest* rows,
+      // then merge the newest page on top — the mid-list hole this loop exists
+      // to avoid. Keyed on `loadedChannelId`, not on the cursor being 0: a
+      // channel that is legitimately empty also has cursor 0, and it still
+      // needs reconnect to fetch what arrived while the socket was down. That
+      // case is exactly G1's "network killed 30s then restored".
+      if (loadedChannelIdRef.current !== channelId) return
 
-    let cursor = highestMessageId(messagesRef.current)
-    for (let page = 0; page < MAX_RESYNC_PAGES; page += 1) {
-      const q = resyncQuery(channelId, cursor)
-      const { data, error: err } = await supabase
-        .from('messages')
-        .select(MESSAGE_COLUMNS)
-        .eq('channel_id', q.channelId)
-        .gt('id', q.afterId)
-        .order('id', { ascending: q.ascending })
-        .limit(RESYNC_LIMIT)
-      if (err || epochRef.current !== epoch) {
-        resyncing.current = false
-        return
+      let cursor = highestMessageId(messagesRef.current)
+      for (let page = 0; page < MAX_RESYNC_PAGES; page += 1) {
+        const q = resyncQuery(channelId, cursor)
+        const { data, error: err } = await supabase
+          .from('messages')
+          .select(MESSAGE_COLUMNS)
+          .eq('channel_id', q.channelId)
+          .gt('id', q.afterId)
+          .order('id', { ascending: q.ascending })
+          .limit(RESYNC_LIMIT)
+        if (err || epochRef.current !== epoch) return
+
+        const rows = (data ?? []) as Message[]
+        if (rows.length === 0) break
+
+        absorb(rows)
+        cursor = highestMessageId(rows)
+
+        // Attachments for what arrived, on the same reasoning as the page
+        // fetch: no FK for PostgREST to embed across (DECISIONS #2).
+        void supabase
+          .from('attachments')
+          .select(ATTACHMENT_COLUMNS)
+          .eq('owner_type', 'message')
+          .in(
+            'owner_id',
+            rows.map((m) => String(m.id)),
+          )
+          .then(({ data: att }) => {
+            if (att && epochRef.current === epoch) absorbAttachments(att as Attachment[])
+          })
+
+        if (rows.length < RESYNC_LIMIT) break
       }
 
-      const rows = (data ?? []) as Message[]
-      if (rows.length === 0) break
-
-      absorb(rows)
-      cursor = highestMessageId(rows)
-
-      // Attachments for what arrived, on the same reasoning as the page fetch:
-      // no FK for PostgREST to embed across (DECISIONS #2).
-      void supabase
-        .from('attachments')
-        .select(ATTACHMENT_COLUMNS)
-        .eq('owner_type', 'message')
-        .in(
-          'owner_id',
-          rows.map((m) => String(m.id)),
-        )
-        .then(({ data: att }) => {
-          if (att && epochRef.current === epoch) absorbAttachments(att as Attachment[])
-        })
-
-      if (rows.length < RESYNC_LIMIT) break
+      await sweepPending()
+    } finally {
+      resyncing.current = false
     }
-
-    await sweepPending()
-    resyncing.current = false
   }, [channelId, absorb, absorbAttachments, sweepPending])
 
   // Load the first page, then subscribe. Re-runs on channel change.
