@@ -13,6 +13,7 @@ import {
 import { useParams, useSearchParams } from 'react-router-dom'
 
 import {
+  ListTodoIcon,
   MessageSquareIcon,
   PaperclipIcon,
   PencilIcon,
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react'
 
 import { AuthorAvatar } from '@/components/layout/AuthorAvatar'
+import { TaskDialog } from '@/components/tasks/TaskDialog'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -50,8 +52,10 @@ import {
   mentionQueryAt,
   splitMentions,
 } from '@/lib/mentions'
+import { titleFromBody } from '@/lib/tasks'
 import { splitThreads, threadRootFor } from '@/lib/threads'
 import { useUnread } from '@/lib/unread-context'
+import { createTaskFromMessage } from '@/lib/useTasks'
 import { useMessages, type Message } from '@/lib/useMessages'
 import { useSignedUrls } from '@/lib/useSignedUrls'
 import type { PendingMessage } from '@/lib/pending'
@@ -62,6 +66,9 @@ const STICK_THRESHOLD = 80
 
 /** How close to the top starts fetching older messages, in pixels. */
 const LOAD_MORE_THRESHOLD = 200
+
+/** Scrollback pages a `?m=` jump may pull hunting for an old message. */
+const JUMP_HUNT_PAGES = 10
 
 export interface PreviewItem {
   attachment: Attachment
@@ -76,6 +83,7 @@ export interface PreviewItem {
 export interface MessageActions {
   onReply: (message: Message) => void
   onRequestDelete: (message: Message) => void
+  onCreateTask: (message: Message) => void
   deleteAttachment: (attachment: Attachment) => Promise<void>
   editMessage: (id: number, body: string) => Promise<void>
 }
@@ -118,6 +126,8 @@ export default function ChannelView() {
   const [dragging, setDragging] = useState(false)
   const [preview, setPreview] = useState<PreviewItem | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<Message | null>(null)
+  // The message a task is being created from — the P2 modal (SPEC §1.6).
+  const [taskFrom, setTaskFrom] = useState<Message | null>(null)
   // Which thread the hover Reply button opened, so the thread expands and its
   // composer takes focus.
   const [openThread, setOpenThread] = useState<number | null>(null)
@@ -125,6 +135,7 @@ export default function ChannelView() {
   const actions: MessageActions = {
     onReply: (message) => setOpenThread(threadRootFor(message)),
     onRequestDelete: (message) => setConfirmDelete(message),
+    onCreateTask: (message) => setTaskFrom(message),
     deleteAttachment,
     editMessage,
   }
@@ -234,6 +245,14 @@ export default function ChannelView() {
   const jumpTo = params.get('m')
   const [flash, setFlash] = useState<number | null>(null)
 
+  // How many scrollback pages a jump may pull hunting for its target before
+  // giving up and landing in the channel — 10 pages ≈ 500 messages. Reset per
+  // parameter, so a second chip click gets a fresh budget.
+  const jumpHuntLeft = useRef(JUMP_HUNT_PAGES)
+  useEffect(() => {
+    jumpHuntLeft.current = JUMP_HUNT_PAGES
+  }, [jumpTo])
+
   useEffect(() => {
     const decision = resolveJump({
       jumpTo,
@@ -241,6 +260,7 @@ export default function ChannelView() {
       loadedChannelId,
       channelId,
       messages,
+      hasMore,
     })
 
     // `wait` is the case that matters and the one an effect cannot see from the
@@ -249,6 +269,16 @@ export default function ChannelView() {
     // Clearing the parameter there would consume it before the target could
     // possibly exist. `resolveJump` and its tests own that distinction.
     if (decision.status === 'idle' || decision.status === 'wait') return
+
+    // The target is below the loaded page: pull older pages until it appears
+    // or the budget runs out (DECISIONS #23). The parameter survives each
+    // pull, so this effect re-asks when the page lands; on exhaustion it falls
+    // through and is consumed exactly like a miss.
+    if (decision.status === 'page' && jumpHuntLeft.current > 0) {
+      jumpHuntLeft.current -= 1
+      void loadOlder()
+      return
+    }
 
     if (decision.status === 'hit') {
       // A reply only exists in the DOM once its thread is expanded.
@@ -266,7 +296,7 @@ export default function ChannelView() {
       },
       { replace: true },
     )
-  }, [jumpTo, loading, loadedChannelId, channelId, messages, setParams])
+  }, [jumpTo, loading, loadedChannelId, channelId, messages, hasMore, loadOlder, setParams])
 
   /**
    * Scroll to the flashed message and highlight it briefly.
@@ -486,6 +516,28 @@ export default function ChannelView() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <TaskDialog
+        open={taskFrom !== null}
+        title="Create task from message"
+        submitLabel="Create task"
+        initial={taskFrom ? { title: titleFromBody(taskFrom.body) } : {}}
+        onClose={() => setTaskFrom(null)}
+        onSubmit={async (fields) => {
+          // Captured at open-time: `taskFrom` is plain data, so it stays valid
+          // even if the user switches channels with the dialog open.
+          if (!taskFrom) return
+          if (authorId === null) throw new Error('Not signed in.')
+          await createTaskFromMessage(taskFrom, {
+            title: fields.title,
+            status: fields.status,
+            assigneeId: fields.assigneeId,
+            dueDate: fields.dueDate,
+            description: fields.description,
+            createdBy: authorId,
+          })
+        }}
+      />
     </div>
   )
 }
@@ -595,6 +647,15 @@ function MessageRow({
 
       {!deleted && !editing && (
         <div className="bg-background absolute -top-3 right-1 hidden items-center gap-0.5 rounded-md border p-0.5 shadow-sm group-hover:flex group-focus-within:flex">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={() => actions.onCreateTask(message)}
+          >
+            <ListTodoIcon className="size-3.5" />
+            <span className="sr-only">Create task</span>
+          </Button>
           <Button
             variant="ghost"
             size="icon"

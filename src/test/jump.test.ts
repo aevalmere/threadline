@@ -13,6 +13,7 @@ function base(over: Partial<Parameters<typeof resolveJump>[0]> = {}) {
     loadedChannelId: 'general',
     channelId: 'general',
     messages: [ROOT, REPLY],
+    hasMore: false,
     ...over,
   })
 }
@@ -65,6 +66,29 @@ describe('resolveJump', () => {
 
   it('misses when the message is not in the loaded page', () => {
     expect(base({ jumpTo: '999' })).toEqual({ status: 'miss' })
+  })
+
+  /**
+   * The P2 chip case (DECISIONS #23): a task's source message is usually far
+   * older than the newest-50 page, so a target below the page with older
+   * pages remaining asks for one more page instead of giving up.
+   */
+  it('pages backwards when the target is older than the loaded page', () => {
+    expect(base({ jumpTo: '5', hasMore: true })).toEqual({ status: 'page' })
+  })
+
+  it('misses, not pages, once scrollback is exhausted', () => {
+    expect(base({ jumpTo: '5', hasMore: false })).toEqual({ status: 'miss' })
+  })
+
+  it('never pages for a target newer than the loaded page', () => {
+    // Newer-but-absent means deleted, not unloaded — the first page is the
+    // newest one, so hunting backwards can never find it.
+    expect(base({ jumpTo: '999', hasMore: true })).toEqual({ status: 'miss' })
+  })
+
+  it('misses rather than pages on an empty channel', () => {
+    expect(base({ jumpTo: '5', hasMore: true, messages: [] })).toEqual({ status: 'miss' })
   })
 
   it('misses on a parameter that is not a message id', () => {

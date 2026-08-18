@@ -60,12 +60,12 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 
 ## P2 — Tasks · Aug 18–20 *(orig. Aug 14–16)*
 
-- [ ] Task CRUD
-- [ ] Kanban with dnd-kit — `position` float persistence
-- [ ] Status / assignee / due date
-- [ ] "My Tasks" view
-- [ ] **Create task from message** — hover action → prefilled modal → task links back to source with jump navigation
-- [ ] Vitest: task-from-message payload + `links` row creation
+- [x] Task CRUD
+- [x] Kanban with dnd-kit — `position` float persistence
+- [x] Status / assignee / due date
+- [x] "My Tasks" view
+- [x] **Create task from message** — hover action → prefilled modal → task links back to source with jump navigation *(jump now pages backwards for old messages — DECISIONS #23)*
+- [x] Vitest: task-from-message payload + `links` row creation
 
 **GATE G2** — Convert a real message to a task · drag it across columns · refresh and the order holds · the task's "from #channel" link jumps to the exact message.
 

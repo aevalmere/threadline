@@ -1070,3 +1070,33 @@ guard on create-task-from-message double-submit.
 **Cost.** ~650k subagent tokens for the audit + code-map workflows. The four
 vendored skills auto-trigger from their descriptions; if their advice ever
 fights CLAUDE.md, CLAUDE.md wins (skills section, standing rule).
+
+---
+
+## #23 — 2026-08-18 — P2 build: jump paging pulled forward, and the plain-text rich column
+
+**Jump paging left BACKLOG early.** The deep-link entry ("`?m=` should page
+backwards hunting for its target") was parked in P1 because notifications
+point at *recent* messages, which the newest-50 page almost always holds. A
+task's "from #channel" chip inverts that: its source message is usually old,
+so without paging the chip lands you in the channel with no scroll — and G2's
+acceptance line literally reads "jumps to the exact message". `resolveJump`
+gained a fourth outcome, `page` (target id below the loaded page while
+`hasMore`), and ChannelView pulls scrollback pages until the target appears,
+capped at `JUMP_HUNT_PAGES = 10` (~500 messages) per parameter so a deleted
+ancient message cannot make a chip click download a whole channel. On
+exhaustion it degrades to exactly the old behavior: land in the channel,
+drop the parameter. Four new resolveJump tests pin all of it.
+
+**`description_rich` holds BlockNote-shaped paragraphs today.** P2's form is
+a plain textarea (the ui kit has no editor until P4), but it writes
+`[{type:'paragraph',content:[{type:'text',text,styles:{}}]}]` blocks via
+`richFromPlain`, not a bare string — so P4's BlockNote loads the same column
+with zero migration and zero conversion pass. `plainFromRich` reads it back
+and tolerates foreign values. Empty text stores SQL `null`, not `[]`.
+
+**Two shapes deliberately not built.** No tasks realtime (SPEC §4 is explicit;
+the board refetches) and no toast on task creation — the dialog closing is the
+confirmation, and NotificationBell owns the only toast stack in the app;
+a second fixed stack would overlap it. If a shared toast is ever wanted,
+extract the bell's, don't add a library.
