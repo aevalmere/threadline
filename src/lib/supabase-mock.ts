@@ -39,8 +39,9 @@
  * v3 added `username`, without which sign-in and mentions have nothing to
  * resolve and every profile renders as a teammate the app cannot name.
  * v4 added the `notifications` table for the bell.
+ * v5 added the `tasks` and `links` tables for the P2 kanban.
  */
-const STORAGE_KEY = 'threadline.mock.v4'
+const STORAGE_KEY = 'threadline.mock.v5'
 
 type Row = Record<string, unknown>
 type Tables = Record<string, Row[]>
@@ -124,6 +125,8 @@ function seed(): Tables {
     messages: [],
     attachments: [],
     notifications: [],
+    tasks: [],
+    links: [],
   }
 }
 
@@ -172,6 +175,16 @@ const COLUMN_DEFAULTS: Record<string, Row> = {
   channel_members: { last_read_message_id: null },
   attachments: { mime: null, size_bytes: null },
   notifications: { actor_id: null, read_at: null },
+  tasks: {
+    description_rich: null,
+    assignee_id: null,
+    due_date: null,
+    source_message_id: null,
+    source_post_id: null,
+    created_by: null,
+    completed_at: null,
+  },
+  // `links` has no nullable payload columns (SPEC §2.3) — nothing to default.
 }
 
 /**

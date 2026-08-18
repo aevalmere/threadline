@@ -669,6 +669,172 @@ async function notificationsCheck(anon: SupabaseClient): Promise<ProbeResult[]> 
 }
 
 /**
+ * `tasks` + `links` — SPEC §1.6, §1.8, §2.3; the P2 tables.
+ *
+ * Beyond the four verbs, two shapes are worth asserting because client code
+ * depends on them exactly: the `status` CHECK (a typo'd status must fail
+ * loudly, not write a card no column renders), and the create-task-from-
+ * message pair — a task holding the message's bigint id in
+ * `source_message_id` while the `links` row holds the same id as *text*
+ * (DECISIONS #2). The backlink read uses the `(target_type, target_id)`
+ * index's exact query shape. Every verb is judged on rows, never on error
+ * absence (DECISIONS #5).
+ */
+async function tasksLinksCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
+  const out: ProbeResult[] = []
+  const me = await ensureUser(EMAIL_A)
+
+  const chan = await admin
+    .from('channels')
+    .select('id')
+    .eq('name', 'general')
+    .eq('kind', 'chat')
+    .maybeSingle<{ id: string }>()
+  if (chan.error || !chan.data) {
+    return [{ verb: 'task insert', ok: false, detail: 'no #general to mint a probe message in' }]
+  }
+
+  // A real message for the FK — minted here, removed at the end, exactly like
+  // threadFlatteningCheck. The seed never leaves content behind.
+  const msg = await admin
+    .from('messages')
+    .insert({ channel_id: chan.data.id, author_id: me, body: '__task_probe' })
+    .select('id')
+    .single<{ id: number }>()
+  if (msg.error || !msg.data) {
+    return [
+      {
+        verb: 'task insert',
+        ok: false,
+        detail: `could not mint a probe message: ${msg.error?.message ?? 'no row'}`,
+      },
+    ]
+  }
+
+  const ins = await anon
+    .from('tasks')
+    .insert({
+      title: '__probe task',
+      status: 'todo',
+      position: 1024,
+      source_message_id: msg.data.id,
+      created_by: me,
+    })
+    .select('id')
+    .single<{ id: string }>()
+  out.push({
+    verb: 'task insert',
+    ok: !ins.error && !!ins.data,
+    detail: ins.error?.message ?? 'created with source_message_id set',
+  })
+
+  if (!ins.data) {
+    for (const verb of [
+      'task read',
+      'task status',
+      'task update',
+      'link insert',
+      'link backlink',
+      'link delete',
+      'task delete',
+    ]) {
+      out.push({ verb, ok: false, detail: 'skipped — insert failed' })
+    }
+    die('remove the task probe message', (await admin.from('messages').delete().eq('id', msg.data.id)).error)
+    return out
+  }
+
+  const sel = await anon.from('tasks').select('id').eq('id', ins.data.id)
+  out.push({
+    verb: 'task read',
+    ok: !sel.error && (sel.data?.length ?? 0) === 1,
+    detail: sel.error ? sel.error.message : `${sel.data?.length ?? 0} rows visible`,
+  })
+
+  // The CHECK constraint on `status` — the kanban only renders three columns.
+  const bad = await anon
+    .from('tasks')
+    .insert({ title: '__probe bad', status: 'blocked', position: 1, created_by: me })
+    .select('id')
+  out.push({
+    verb: 'task status',
+    ok: bad.error?.code === '23514',
+    detail:
+      bad.error?.code === '23514'
+        ? 'an unknown status was rejected (23514)'
+        : `unknown status accepted — ${bad.error?.message ?? 'no error'}`,
+  })
+
+  // The kanban drop write: status + position + completed_at in one update.
+  const upd = await anon
+    .from('tasks')
+    .update({ status: 'done', position: 2048, completed_at: new Date().toISOString() })
+    .eq('id', ins.data.id)
+    .select('id')
+  out.push({
+    verb: 'task update',
+    ok: !upd.error && (upd.data?.length ?? 0) === 1,
+    detail: upd.error ? upd.error.message : `moved to done, ${upd.data?.length ?? 0} row updated`,
+  })
+
+  // The links row exactly as the client's linkForTask builds it: the bigint
+  // message id crosses to text here and nowhere else.
+  const link = await anon
+    .from('links')
+    .insert({
+      source_type: 'task',
+      source_id: ins.data.id,
+      target_type: 'message',
+      target_id: String(msg.data.id),
+      kind: 'created_from',
+    })
+    .select('id')
+    .single<{ id: string }>()
+  out.push({
+    verb: 'link insert',
+    ok: !link.error && !!link.data,
+    detail: link.error?.message ?? 'created_from edge written with a text id',
+  })
+
+  if (link.data) {
+    // The backlink panel's exact query — what the (target_type, target_id)
+    // index exists for.
+    const back = await anon
+      .from('links')
+      .select('id')
+      .eq('target_type', 'message')
+      .eq('target_id', String(msg.data.id))
+    out.push({
+      verb: 'link backlink',
+      ok: !back.error && (back.data?.length ?? 0) === 1,
+      detail: back.error ? back.error.message : `${back.data?.length ?? 0} edge found by target`,
+    })
+
+    const ldel = await anon.from('links').delete().eq('id', link.data.id).select('id')
+    out.push({
+      verb: 'link delete',
+      ok: !ldel.error && (ldel.data?.length ?? 0) === 1,
+      detail: ldel.error ? ldel.error.message : 'probe edge removed',
+    })
+  } else {
+    for (const verb of ['link backlink', 'link delete']) {
+      out.push({ verb, ok: false, detail: 'skipped — link insert failed' })
+    }
+  }
+
+  const tdel = await anon.from('tasks').delete().eq('id', ins.data.id).select('id')
+  out.push({
+    verb: 'task delete',
+    ok: !tdel.error && (tdel.data?.length ?? 0) === 1,
+    detail: tdel.error ? tdel.error.message : 'probe task removed',
+  })
+
+  die('remove the task probe message', (await admin.from('messages').delete().eq('id', msg.data.id)).error)
+
+  return out
+}
+
+/**
  * The account system — DECISIONS #14, and the evidence for the usernames
  * migration.
  *
@@ -1001,6 +1167,7 @@ async function rlsCheck(email: string) {
   results.push(...(await unreadCountsCheck(anon)))
   results.push(...(await unreadPointerCheck(anon)))
   results.push(...(await notificationsCheck(anon)))
+  results.push(...(await tasksLinksCheck(anon)))
   results.push(...(await accountsCheck()))
   results.push(...(await deniedWithoutSession()))
 
@@ -1108,6 +1275,38 @@ async function deniedWithoutSession() {
       .from('notifications')
       .delete()
       .eq('id', plantedId)).error)
+  }
+
+  // Tasks carry team plans; same planted-row discipline as notifications —
+  // an empty table returns [] under any policy, so plant first, then judge.
+  const plantedTaskId = crypto.randomUUID()
+  const plantedTask = await admin.from('tasks').insert({
+    id: plantedTaskId,
+    title: '__anon_probe',
+    status: 'todo',
+    position: 1,
+  })
+  if (plantedTask.error) {
+    out.push({
+      verb: 'anon tasks',
+      ok: false,
+      detail: `could not plant a probe task: ${plantedTask.error.message}`,
+    })
+  } else {
+    const t = await anon.from('tasks').select('id').limit(1)
+    const tVisible = t.data?.length ?? 0
+    const canReadTasks = !t.error && tVisible > 0
+    out.push({
+      verb: 'anon tasks',
+      ok: !canReadTasks,
+      detail: canReadTasks
+        ? `${tVisible} task rows readable without a session`
+        : 'denied (with a row present, so this means denied and not empty)',
+    })
+    die('remove the planted anon probe task', (await admin
+      .from('tasks')
+      .delete()
+      .eq('id', plantedTaskId)).error)
   }
 
   // `unread_counts()` is granted to `authenticated` only (DECISIONS #18) and
