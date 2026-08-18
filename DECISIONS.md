@@ -1100,3 +1100,47 @@ the board refetches) and no toast on task creation — the dialog closing is the
 confirmation, and NotificationBell owns the only toast stack in the app;
 a second fixed stack would overlap it. If a shared toast is ever wanted,
 extract the bell's, don't add a library.
+
+---
+
+## #24 — 2026-08-18 — What the 25-agent adversarial review caught, and the fixes
+
+Five lens finders over the whole P2 diff, every finding judged by two
+independent refuters (refuted-by-default). Seven unique findings survived,
+one was killed. All seven were real; all seven are fixed in the same commit
+as this entry. The two worth remembering:
+
+- **A dialog status change kept the card's old `position`.** Every column's
+  first card sits at 1024, so the non-drag path minted same-column ties —
+  order then differed *between refreshes* (Postgres tie order is
+  unspecified), and a later drop onto a tied card computed
+  `positionBetween(1024, 1024) = 1024`: a third tie, with the dropped card
+  visibly not landing where it was dropped. `patchFromFields` now takes the
+  destination-column append position and writes it with every status
+  transition. The G2 drag script would have passed anyway — which is exactly
+  why the property "order holds across refresh" needed a hostile reader, not
+  a demo.
+- **The jump hunt's page budget burned on no-ops.** The effect re-runs on
+  every arriving realtime message; `loadOlder` answers mid-flight calls with
+  'busy', and each one decremented the 10-page cap — so in an active channel
+  a chip jump gave up early, and in the worst case consumed `?m=` while the
+  page containing the target was still in flight. The budget now decrements
+  only on non-'busy' results, and an exhausted hunt waits for the in-flight
+  page before consuming the parameter.
+
+The other five: task deletion left `links` edges dangling forever (SPEC §1.8
+says integrity is app-enforced — now both directions are deleted first);
+overdue styling compared the local due date against the *UTC* day (red at
+5pm PDT on the due date itself); the hover bar's `display:none` reveal made
+create-task-from-message unreachable by keyboard on plain messages (now an
+opacity reveal, so the buttons stay tabbable); dnd-kit's spread
+`attributes` made every card a second, dead tab stop whose screen-reader
+text promised a space-bar drag no sensor implements (listeners only now);
+and the seed's bad-status probe leaked its row on the exact failure path it
+probes for, with no pre-clean sweep for interrupted runs (both added).
+
+The one refuted finding — SourceChip's link nested in a button — was killed
+on the ARIA spec itself: focusable descendants survive presentational-role
+flattening, so the chip stays a working link everywhere it renders. The
+nesting is an HTML-validity wart, not a behavior defect; noted here so a
+future session doesn't re-litigate it.

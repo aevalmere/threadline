@@ -76,6 +76,22 @@ export function useTasks() {
   }, [])
 
   const deleteTask = useCallback(async (id: string): Promise<void> => {
+    // Links integrity is app-enforced (SPEC §1.8) — the database has no FK to
+    // cascade, so a hard-deleted task must take its edges with it, both
+    // directions, or the backlink panel resolves ghosts forever. Edges go
+    // first: a failure part-way leaves a deletable task, never a dangling
+    // edge.
+    for (const [typeCol, idCol] of [
+      ['source_type', 'source_id'],
+      ['target_type', 'target_id'],
+    ] as const) {
+      const { error: linkErr } = await supabase
+        .from('links')
+        .delete()
+        .eq(typeCol, 'task')
+        .eq(idCol, id)
+      if (linkErr) throw new Error(linkErr.message)
+    }
     const { data, error: err } = await supabase.from('tasks').delete().eq('id', id).select('id')
     if (err || (data?.length ?? 0) !== 1) {
       throw new Error(err?.message ?? 'The delete did not take effect.')

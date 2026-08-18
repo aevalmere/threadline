@@ -181,14 +181,19 @@ function TaskForm({
       </div>
 
       <div className="space-y-2">
-        <span className="text-sm font-medium">Status</span>
-        <div className="flex gap-2">
+        <span id="task-status-label" className="text-sm font-medium">
+          Status
+        </span>
+        {/* This is the non-drag path across columns, so the selection must be
+            programmatic state, not just a variant swap. */}
+        <div role="group" aria-labelledby="task-status-label" className="flex gap-2">
           {TASK_STATUSES.map((s) => (
             <Button
               key={s}
               type="button"
               variant={fields.status === s ? 'default' : 'outline'}
               size="sm"
+              aria-pressed={fields.status === s}
               onClick={() => set('status', s)}
             >
               {STATUS_LABELS[s]}

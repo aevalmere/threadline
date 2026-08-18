@@ -220,6 +220,7 @@ describe('statusPatch', () => {
 
 describe('fieldsFromTask / patchFromFields', () => {
   const NOW = '2026-08-18T12:00:00.000Z'
+  const DEST_POS = 4096
 
   it('round-trips a task through the form without changing it', () => {
     const t = task({
@@ -227,7 +228,7 @@ describe('fieldsFromTask / patchFromFields', () => {
       due_date: '2026-08-25',
       description_rich: richFromPlain('two\nlines'),
     })
-    const patch = patchFromFields(fieldsFromTask(t), t.status, NOW)
+    const patch = patchFromFields(fieldsFromTask(t), t.status, NOW, DEST_POS)
     expect(patch).toEqual({
       title: t.title,
       assignee_id: BOB,
@@ -236,23 +237,29 @@ describe('fieldsFromTask / patchFromFields', () => {
     })
   })
 
-  it('leaves completed_at alone when status did not change', () => {
-    // Editing a done task's title must not re-stamp its completion date.
-    const patch = patchFromFields(fieldsFromTask(task({ status: 'done' })), 'done', NOW)
+  it('leaves completed_at and position alone when status did not change', () => {
+    // Editing a done task's title must not re-stamp its completion date, and
+    // must not move the card.
+    const patch = patchFromFields(fieldsFromTask(task({ status: 'done' })), 'done', NOW, DEST_POS)
     expect('completed_at' in patch).toBe(false)
     expect('status' in patch).toBe(false)
+    expect('position' in patch).toBe(false)
   })
 
-  it('carries completed_at with a status transition', () => {
+  it('a status transition carries completed_at AND a destination position', () => {
+    // Without the fresh position, a dialog-moved card keeps its old value and
+    // ties with the destination column's cards — order then differs between
+    // refreshes and midpoint drops between the tied pair go nowhere.
     const fields = { ...fieldsFromTask(task()), status: 'done' as const }
-    const patch = patchFromFields(fields, 'todo', NOW)
+    const patch = patchFromFields(fields, 'todo', NOW, DEST_POS)
     expect(patch.status).toBe('done')
     expect(patch.completed_at).toBe(NOW)
+    expect(patch.position).toBe(DEST_POS)
   })
 
   it('clearing the description writes null, not empty blocks', () => {
     const fields = { ...fieldsFromTask(task()), description: '' }
-    expect(patchFromFields(fields, 'todo', NOW).description_rich).toBeNull()
+    expect(patchFromFields(fields, 'todo', NOW, DEST_POS).description_rich).toBeNull()
   })
 })
 

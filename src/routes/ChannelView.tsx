@@ -274,10 +274,21 @@ export default function ChannelView() {
     // or the budget runs out (DECISIONS #23). The parameter survives each
     // pull, so this effect re-asks when the page lands; on exhaustion it falls
     // through and is consumed exactly like a miss.
-    if (decision.status === 'page' && jumpHuntLeft.current > 0) {
-      jumpHuntLeft.current -= 1
-      void loadOlder()
-      return
+    if (decision.status === 'page') {
+      if (jumpHuntLeft.current > 0) {
+        // Decrement only when a page was genuinely requested. Realtime
+        // traffic re-runs this effect while a page is in flight, and
+        // `loadOlder` answers those calls with a no-op 'busy' — burning
+        // budget on them would end the hunt far short of the cap in any
+        // active channel.
+        void loadOlder().then((result) => {
+          if (result !== 'busy') jumpHuntLeft.current -= 1
+        })
+        return
+      }
+      // Exhausted — but the final page may still be in flight with the
+      // target on it. Let it land before the parameter is consumed.
+      if (loadingMore) return
     }
 
     if (decision.status === 'hit') {
@@ -296,7 +307,7 @@ export default function ChannelView() {
       },
       { replace: true },
     )
-  }, [jumpTo, loading, loadedChannelId, channelId, messages, hasMore, loadOlder, setParams])
+  }, [jumpTo, loading, loadedChannelId, channelId, messages, hasMore, loadingMore, loadOlder, setParams])
 
   /**
    * Scroll to the flashed message and highlight it briefly.
@@ -645,8 +656,12 @@ function MessageRow({
 
       {children}
 
+      {/* Revealed by opacity, not display — a display:none button is not
+          tabbable, which would leave keyboard users no path to any of these
+          actions on a plain message. pointer-events gates clicks while
+          invisible. */}
       {!deleted && !editing && (
-        <div className="bg-background absolute -top-3 right-1 hidden items-center gap-0.5 rounded-md border p-0.5 shadow-sm group-hover:flex group-focus-within:flex">
+        <div className="bg-background pointer-events-none absolute -top-3 right-1 flex items-center gap-0.5 rounded-md border p-0.5 opacity-0 shadow-sm group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
           <Button
             variant="ghost"
             size="icon"

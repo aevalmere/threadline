@@ -67,7 +67,11 @@ export default function Tasks() {
 
   const grouped = useMemo(() => groupByStatus(tasks ?? []), [tasks])
   const mine = useMemo(() => myTasks(tasks ?? [], authorId), [tasks, authorId])
-  const today = new Date().toISOString().slice(0, 10)
+  // The LOCAL calendar date. due_date comes from a native date input, which
+  // holds the user's local date — comparing it against the UTC day
+  // (toISOString) would flag a task overdue at 5pm PDT on its own due date.
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
   /**
    * source_message_id → channel_id for the "from #channel" chips, one batched
@@ -174,7 +178,17 @@ export default function Tasks() {
   }
 
   async function edit(task: Task, fields: TaskFields) {
-    await updateTask(task.id, patchFromFields(fields, task.status, new Date().toISOString()))
+    // The append position is only written when the status actually changed
+    // (patchFromFields) — the destination column never contains the task then.
+    await updateTask(
+      task.id,
+      patchFromFields(
+        fields,
+        task.status,
+        new Date().toISOString(),
+        appendPosition(grouped[fields.status]),
+      ),
+    )
   }
 
   return (
@@ -325,8 +339,12 @@ function DraggableCard({
         drag.setNodeRef(el)
         drop.setNodeRef(el)
       }}
+      // Listeners only — not `drag.attributes`. Those would make this wrapper
+      // a second tab stop with role="button" and screen-reader instructions
+      // promising a space-bar drag that no KeyboardSensor answers. The inner
+      // card is the one focusable, and the edit dialog is the keyboard path
+      // across columns.
       {...drag.listeners}
-      {...drag.attributes}
       className={cn(drag.isDragging && 'opacity-40', drop.isOver && 'ring-ring/50 ring-2 rounded-lg')}
     >
       <TaskCard task={task} today={today} source={source} onOpen={onOpen} />

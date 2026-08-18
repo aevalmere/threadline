@@ -684,6 +684,24 @@ async function tasksLinksCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
   const out: ProbeResult[] = []
   const me = await ensureUser(EMAIL_A)
 
+  // Pre-clean debris from an interrupted earlier run — the discipline
+  // `deniedWithoutSession` applies to its channel probe. A crash between the
+  // inserts below and the cleanup at the end would otherwise strand probe
+  // rows in production forever, since nothing else sweeps these titles.
+  const stale = await admin
+    .from('tasks')
+    .select('id')
+    .in('title', ['__probe task', '__probe bad'])
+  if (stale.data?.length) {
+    const ids = stale.data.map((r: { id: string }) => r.id)
+    die('sweep stale probe links', (await admin.from('links').delete().in('source_id', ids)).error)
+    die('sweep stale probe tasks', (await admin.from('tasks').delete().in('id', ids)).error)
+  }
+  die(
+    'sweep stale probe messages',
+    (await admin.from('messages').delete().eq('body', '__task_probe')).error,
+  )
+
   const chan = await admin
     .from('channels')
     .select('id')
@@ -764,6 +782,20 @@ async function tasksLinksCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
         ? 'an unknown status was rejected (23514)'
         : `unknown status accepted — ${bad.error?.message ?? 'no error'}`,
   })
+  // On the exact failure this probe exists to catch, the row was written —
+  // remove it, or it sits invisibly in production (an unknown status renders
+  // in no kanban column).
+  if (bad.data?.length) {
+    die(
+      'remove the bad-status probe row',
+      (
+        await admin
+          .from('tasks')
+          .delete()
+          .in('id', bad.data.map((r: { id: string }) => r.id))
+      ).error,
+    )
+  }
 
   // The kanban drop write: status + position + completed_at in one update.
   const upd = await anon

@@ -213,21 +213,26 @@ export function fieldsFromTask(task: Task): TaskFields {
 
 /**
  * The patch an edit writes. A status transition carries `completed_at` with
- * it (statusPatch); an edit that leaves status alone must not touch
- * `completed_at`, or editing a done task's title would re-stamp its
- * completion date.
+ * it (statusPatch) — and a fresh `position` in the destination column: the
+ * dialog is the non-drag path across columns, and a card keeping its old
+ * position would tie with the destination's cards (two columns both start at
+ * POSITION_STEP), making order unstable across refreshes and poisoning later
+ * midpoint drops. An edit that leaves status alone touches neither.
  */
 export function patchFromFields(
   fields: TaskFields,
   previousStatus: TaskStatus,
   nowIso: string,
+  positionInNewColumn: number,
 ): Partial<Task> {
   return {
     title: fields.title,
     assignee_id: fields.assigneeId,
     due_date: fields.dueDate,
     description_rich: richFromPlain(fields.description),
-    ...(fields.status === previousStatus ? {} : statusPatch(fields.status, nowIso)),
+    ...(fields.status === previousStatus
+      ? {}
+      : { ...statusPatch(fields.status, nowIso), position: positionInNewColumn }),
   }
 }
 
