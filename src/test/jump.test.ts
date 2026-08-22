@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { resolveJump } from '@/lib/jump'
 
@@ -58,7 +58,7 @@ describe('resolveJump', () => {
     expect(base({ parentId: undefined })).toEqual({ status: 'wait' })
   })
 
-  it('hits once the new channelâ€™s page has landed', () => {
+  it('hits once the new channel’s page has landed', () => {
     expect(
       base({ parentId: 'random', loadedParentId: 'random', messages: [ROOT] }),
     ).toEqual({ status: 'hit', id: 10, openThread: null })
@@ -82,7 +82,7 @@ describe('resolveJump', () => {
   })
 
   it('never pages for a target newer than the loaded page', () => {
-    // Newer-but-absent means deleted, not unloaded â€” the first page is the
+    // Newer-but-absent means deleted, not unloaded — the first page is the
     // newest one, so hunting backwards can never find it.
     expect(base({ jumpTo: '999', hasMore: true })).toEqual({ status: 'miss' })
   })
@@ -92,7 +92,7 @@ describe('resolveJump', () => {
   })
 
   it('misses on a parameter that is not a message id', () => {
-    // Asserted exactly, not as `miss || idle` â€” that weaker form would also
+    // Asserted exactly, not as `miss || idle` — that weaker form would also
     // pass an implementation that returned `idle` for everything.
     for (const bad of ['abc', '1.5', 'NaN', '1e3x', '10abc']) {
       expect(base({ jumpTo: bad }).status).toBe('miss')
@@ -101,7 +101,7 @@ describe('resolveJump', () => {
     expect(base({ jumpTo: '' }).status).toBe('idle')
   })
 
-  it('never reports a hit while waiting â€” the parameter must survive', () => {
+  it('never reports a hit while waiting — the parameter must survive', () => {
     // Anything that is not a hit and not a miss has to be `wait`, because only
     // `hit` and `miss` are allowed to clear `?m=`.
     const waiting = [

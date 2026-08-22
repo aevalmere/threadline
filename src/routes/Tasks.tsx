@@ -74,14 +74,18 @@ export default function Tasks() {
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
   /**
-   * source_message_id → channel_id and source_post_id → channel_id for the
-   * "from #channel" chips, one batched read each per task-list change. Chip
-   * names resolve through the channels context; a source whose message or
-   * post is gone simply renders no chip.
+   * Source resolution for the "from #channel" chips, one batched read per
+   * table per task-list change. A source *message* carries exactly one parent
+   * (SPEC §1.3): a channel — the chat case — or a post, when the task was
+   * created from a forum comment; the comment case chains through `posts` for
+   * its forum, which is why the posts fetch is keyed on both the tasks' own
+   * source_post_ids and whatever the messages fetch surfaced. Chip names
+   * resolve through the channels context; a source whose message or post is
+   * gone simply renders no chip.
    */
-  const [sourceChannelByMessage, setSourceChannelByMessage] = useState<Map<number, string>>(
-    new Map(),
-  )
+  const [sourceParentByMessage, setSourceParentByMessage] = useState<
+    Map<number, { channelId: string | null; postId: string | null }>
+  >(new Map())
   const [sourceChannelByPost, setSourceChannelByPost] = useState<Map<string, string>>(
     new Map(),
   )
@@ -94,32 +98,33 @@ export default function Tasks() {
         .join(','),
     [tasks],
   )
-  const sourcePostIdsKey = useMemo(
-    () =>
-      (tasks ?? [])
-        .map((t) => t.source_post_id)
-        .filter((id): id is string => id !== null)
-        .sort()
-        .join(','),
-    [tasks],
-  )
+  const sourcePostIdsKey = useMemo(() => {
+    const ids = new Set<string>()
+    for (const t of tasks ?? []) {
+      if (t.source_post_id !== null) ids.add(t.source_post_id)
+    }
+    for (const src of sourceParentByMessage.values()) {
+      if (src.postId !== null) ids.add(src.postId)
+    }
+    return [...ids].sort().join(',')
+  }, [tasks, sourceParentByMessage])
   useEffect(() => {
     if (sourceIdsKey === '') {
-      setSourceChannelByMessage(new Map())
+      setSourceParentByMessage(new Map())
       return
     }
     let cancelled = false
     void supabase
       .from('messages')
-      .select('id,channel_id')
+      .select('id,channel_id,post_id')
       .in('id', sourceIdsKey.split(',').map(Number))
       .then(({ data }) => {
         if (cancelled || !data) return
-        setSourceChannelByMessage(
+        setSourceParentByMessage(
           new Map(
-            (data as { id: number; channel_id: string | null }[])
-              .filter((m) => m.channel_id !== null)
-              .map((m) => [m.id, m.channel_id as string]),
+            (data as { id: number; channel_id: string | null; post_id: string | null }[]).map(
+              (m) => [m.id, { channelId: m.channel_id, postId: m.post_id }],
+            ),
           ),
         )
       })
@@ -150,23 +155,40 @@ export default function Tasks() {
     }
   }, [sourcePostIdsKey])
 
+  const forumNameFor = (postId: string): string | null => {
+    const channelId = sourceChannelByPost.get(postId)
+    if (!channelId) return null
+    return channels?.find((c) => c.id === channelId)?.name ?? null
+  }
+
   const sourceFor = (task: Task): TaskSource | null => {
     if (task.source_message_id !== null) {
-      const channelId = sourceChannelByMessage.get(task.source_message_id)
-      if (!channelId) return null
-      const name = channels?.find((c) => c.id === channelId)?.name
-      if (!name) return null
-      return {
-        kind: 'message',
-        channelId,
-        channelName: name,
-        messageId: task.source_message_id,
+      const src = sourceParentByMessage.get(task.source_message_id)
+      if (!src) return null
+      if (src.channelId !== null) {
+        const name = channels?.find((c) => c.id === src.channelId)?.name
+        if (!name) return null
+        return {
+          kind: 'message',
+          channelId: src.channelId,
+          channelName: name,
+          messageId: task.source_message_id,
+        }
       }
+      if (src.postId !== null) {
+        const name = forumNameFor(src.postId)
+        if (!name) return null
+        return {
+          kind: 'comment',
+          postId: src.postId,
+          forumName: name,
+          messageId: task.source_message_id,
+        }
+      }
+      return null
     }
     if (task.source_post_id !== null) {
-      const channelId = sourceChannelByPost.get(task.source_post_id)
-      if (!channelId) return null
-      const name = channels?.find((c) => c.id === channelId)?.name
+      const name = forumNameFor(task.source_post_id)
       if (!name) return null
       return { kind: 'post', postId: task.source_post_id, forumName: name }
     }

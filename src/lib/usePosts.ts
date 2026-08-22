@@ -256,16 +256,24 @@ export async function deletePostRecord(id: string): Promise<void> {
     if (del.error) throw new Error(del.error.message)
   }
 
+  // Edges for the post itself AND for its comments: the FK cascade
+  // hard-deletes the comment rows, so a `links` row pointing at one — a task
+  // created from a comment — would dangle forever, the exact defect
+  // DECISIONS #24 fixed for task deletion.
   for (const [typeCol, idCol] of [
     ['source_type', 'source_id'],
     ['target_type', 'target_id'],
   ] as const) {
-    const { error: linkErr } = await supabase
-      .from('links')
-      .delete()
-      .eq(typeCol, 'post')
-      .eq(idCol, id)
-    if (linkErr) throw new Error(linkErr.message)
+    const postEdges = await supabase.from('links').delete().eq(typeCol, 'post').eq(idCol, id)
+    if (postEdges.error) throw new Error(postEdges.error.message)
+    if (ownerIds.length > 0) {
+      const commentEdges = await supabase
+        .from('links')
+        .delete()
+        .eq(typeCol, 'message')
+        .in(idCol, ownerIds)
+      if (commentEdges.error) throw new Error(commentEdges.error.message)
+    }
   }
   const { data, error: err } = await supabase
     .from('posts')

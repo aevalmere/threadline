@@ -24,9 +24,14 @@ import { useProfiles } from '@/lib/profiles-context'
 import { STATUS_LABELS, TASK_STATUSES, type TaskFields } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 
-/** Where a task came from, resolved by the parent for the jump chip. */
+/**
+ * Where a task came from, resolved by the parent for the jump chip. Three
+ * shapes because a source message lives in exactly one of two places (SPEC
+ * §1.3): a chat channel, or — as a comment — under a forum post.
+ */
 export type TaskSource =
   | { kind: 'message'; channelId: string; channelName: string; messageId: number }
+  | { kind: 'comment'; postId: string; forumName: string; messageId: number }
   | { kind: 'post'; postId: string; forumName: string }
 
 export function TaskDialog({
@@ -78,7 +83,9 @@ export function SourceChip({ source }: { source: TaskSource }) {
       to={
         source.kind === 'message'
           ? `/channels/${source.channelId}?m=${source.messageId}`
-          : `/posts/${source.postId}`
+          : source.kind === 'comment'
+            ? `/posts/${source.postId}?m=${source.messageId}`
+            : `/posts/${source.postId}`
       }
       className="bg-muted text-muted-foreground hover:text-foreground inline-flex max-w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-xs"
       onClick={(e) => e.stopPropagation()}
