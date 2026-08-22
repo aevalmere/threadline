@@ -6,6 +6,7 @@ import AuthCallback from '@/routes/AuthCallback'
 import ChannelView from '@/routes/ChannelView'
 import Channels from '@/routes/Channels'
 import Docs from '@/routes/Docs'
+import ForumView from '@/routes/ForumView'
 import Forums from '@/routes/Forums'
 import Login from '@/routes/Login'
 import Register from '@/routes/Register'
@@ -32,7 +33,7 @@ export default function App() {
               <Route path="/channels" element={<Channels />} />
               <Route path="/channels/:channelId" element={<ChannelView />} />
               <Route path="/forums" element={<Forums />} />
-              <Route path="/forums/:channelId" element={<Forums />} />
+              <Route path="/forums/:channelId" element={<ForumView />} />
               <Route path="/docs" element={<Docs />} />
               <Route path="/tasks" element={<Tasks />} />
               <Route path="/settings" element={<Settings />} />

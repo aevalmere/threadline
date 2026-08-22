@@ -67,16 +67,23 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <NavLink to="/forums" className={navClass} onClick={onNavigate} end>
             <MessagesSquareIcon /> All forums
           </NavLink>
-          {forum.map((c) => (
-            <NavLink
-              key={c.id}
-              to={`/forums/${c.id}`}
-              className={navClass}
-              onClick={onNavigate}
-            >
-              <HashIcon /> {c.name}
-            </NavLink>
-          ))}
+          {loading ? (
+            <div className="space-y-1 px-2 py-1">
+              <Skeleton className="h-5 w-24" />
+            </div>
+          ) : (
+            forum.map((c) => (
+              <NavLink
+                key={c.id}
+                to={`/forums/${c.id}`}
+                className={navClass}
+                onClick={onNavigate}
+              >
+                <HashIcon />
+                <span className="min-w-0 flex-1 truncate">{c.name}</span>
+              </NavLink>
+            ))
+          )}
         </section>
 
         <section>

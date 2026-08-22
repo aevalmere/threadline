@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { Navigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { XIcon } from 'lucide-react'
 
@@ -307,6 +307,12 @@ export default function ChannelView() {
         </p>
       </div>
     )
+  }
+
+  // A forum opened under /channels shows its post list, not a chat stream —
+  // ForumView guards the reverse direction.
+  if (channel && channel.kind === 'forum') {
+    return <Navigate to={`/forums/${channel.id}`} replace />
   }
 
   const split = splitThreads(messages)

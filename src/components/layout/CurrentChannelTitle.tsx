@@ -14,7 +14,8 @@ export function CurrentChannelTitle() {
   const { pathname } = useLocation()
   const { channels, loading } = useChannels()
 
-  const match = /^\/channels\/([^/]+)/.exec(pathname)
+  // Forums share the header treatment; a post page renders its own title.
+  const match = /^\/(?:channels|forums)\/([^/]+)/.exec(pathname)
   if (!match) return null
 
   const channel = channels?.find((c) => c.id === match[1])

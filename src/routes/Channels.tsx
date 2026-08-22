@@ -372,7 +372,9 @@ function DeleteConfirm({
       <DialogHeader>
         <DialogTitle>Delete #{channel.name}?</DialogTitle>
         <DialogDescription>
-          This also deletes every message in the channel. There is no undo.
+          {channel.kind === 'forum'
+            ? 'This also deletes every post and comment in the forum. There is no undo.'
+            : 'This also deletes every message in the channel. There is no undo.'}
         </DialogDescription>
       </DialogHeader>
 
