@@ -172,7 +172,7 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 ## P6 — Harden & ship · Aug 28–31 *(orig. Aug 26–31)*
 
 - [ ] Team bug-bash fixes — **priority over everything**
-- [ ] Data-export button — authenticated JSON dump of all content tables. **Day-one insurance, do not skip**
+- [x] Data-export button — authenticated JSON dump of all content tables. **Day-one insurance, do not skip** *(shipped early, 2026-08-22 — the rest of P6 is calendar- or beta-gated)*
 - [ ] Dependency freeze — Aug 28
 - [ ] Clean-environment redeploy rehearsal — Aug 30
 - [ ] Timeboxed polish
