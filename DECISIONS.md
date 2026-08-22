@@ -1286,3 +1286,85 @@ affordance gap.
 **Icons distinguish the three surfaces**: chat channels keep `#` (Hash),
 forums get Newspaper (sidebar, /forums, the /channels groups), posts get
 MessageSquareText in the forum list. Ethan's ask verbatim.
+
+---
+
+## #27 — 2026-08-22 — P4 build: the docs decisions SPEC did not make
+
+**BlockNote is `@blocknote/shadcn`, not the recommended mantine flavor.** The
+docs say "Mantine is recommended for new projects," but at 0.54 that flavor
+*peer-depends on the entire Mantine component library* — a second UI system
+beside Radix/shadcn, which Non-negotiable 3 forbids. The shadcn flavor's only
+peer is `tailwindcss ^4.1.12` (bumped from 4.0.6, same major) and it vendors
+its own components — `shadCNComponents` is deliberately not passed. Free core
+only; nothing XL is installed, and BlockNote's yjs peers are optional and
+absent.
+
+**`/docs/*` is the app's first lazy route, and the boundary is a rule.**
+BlockNote is ~315 kB gzip — bigger than every prior phase's growth combined —
+so all of it rides a `React.lazy` DocsArea chunk. The entry chunk measured
+723.35 kB / 212.85 kB gzip at the gate, unchanged within noise from G3.
+**Nothing outside the DocsArea import graph may import `@blocknote/*`,
+`components/docs/*`, or `routes/PageView`** — one stray static import puts the
+editor in every session's bundle. `LinkedItems` lives outside `components/docs`
+precisely because the task dialog (eager) renders it. This is the split
+DECISIONS #20 left the bundle warning un-silenced for; the warning stays.
+
+**The edit-lock polls; pages are not in the realtime publication.** SPEC §4
+lists only `messages` under Postgres Changes, and #7 measured that publication
+column lists do not trim payloads — publishing `pages` would ship the whole
+`body_rich` document to every open tab on every autosave. Instead readers
+re-fetch the two lock columns every 15s while a page is open; the heartbeat is
+an UPDATE of those two columns every 15s while editing. Plain REST, trivially
+inside Non-negotiable 8's budget.
+
+**Edit-lock semantics, precisely.** Editing begins at the **first content
+change** — viewing never claims. Release on leave is guarded
+`.eq('editing_user_id', me)`, so a stale unmount loses quietly to a teammate's
+newer claim (proved live at the gate: the wrong releaser touched 0 rows). A
+claim older than 45s names nobody — that is what clears a closed tab, which
+cannot release. One column pair means two simultaneous editors flap the
+banner; accepted, SPEC §1.7 calls it a warning and not a lock.
+
+**`updated_at` is client-stamped on content saves only — deliberately no
+trigger.** A `BEFORE UPDATE` trigger would fire on heartbeats too, turning
+"last edited" into "last looked at while typing". The autosave patch carries
+`updated_at`; `heartbeatPatch`/`releasePatch` never do.
+
+**Autosave is the latched-trailing 1s timer** (unread-provider's shape): it
+fires 1s after the *first* unsaved change — a reset-on-keystroke debounce
+never fires under continuous typing — with an in-flight re-save loop and an
+unmount flush. Known gap, accepted: closing the *tab* (not in-app navigation)
+can lose up to 1s of typing; a `pagehide` flush is parked in BACKLOG.
+
+**`links` rows are derived from the document, not from the picker.** Every
+successful autosave runs `linksFromDoc` over `body_rich` and diffs the result
+against the page's stored edges (`source_type='page'`, scoped
+`kind='references'` so `created_from` provenance can never be touched).
+Deleting a link's text deletes its edge on the next save — self-healing, pure,
+and unit-tested. The picker (tasks and pages by title) just inserts an
+internal-href link inline; messages arrive by pasting the hover bar's new
+**Copy link** URL, since messages have no titles to list. `/tasks?t=<id>`
+opens that task's dialog, which is where a page→task link lands.
+
+**Images store the storage path, never a URL.** BlockNote's `uploadFile`
+return value lands verbatim in the block's `url` prop inside `body_rich`, so
+it returns the path; `resolveFileUrl` signs it at render (1h TTL, cached).
+A baked signed URL would expire an hour after being pasted — the gate probe
+asserts the stored value stays a path. Upload follows the message discipline:
+validate, storage first, attachments row (`owner_type='page'`), roll the
+object back if the row fails.
+
+**Page affordances follow #26's shape.** Editing is open to everyone — the
+edit-lock banner exists *because* multiple people edit (SPEC §1.7) — but
+Delete renders only for the creator, unlocking when `created_by` is null.
+Affordance, not enforcement; the blanket policy stands.
+
+**Carried from the batch review (PASS, five notes).** Fixed at the gate: a
+staleness guard on the lock poll, and an uncaught clipboard write. Parked in
+BACKLOG: the mock emulates no FK behavior on delete (an offline collection
+delete strands its pages out of the tree — a state Postgres forbids), and a
+page whose document still links a deleted task re-inserts a dangling
+`references` edge on its next save (invisible today; `links` also lacks a
+unique constraint, so racing tabs can double-insert an edge — backlinks
+dedupe, so also invisible).

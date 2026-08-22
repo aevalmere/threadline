@@ -227,7 +227,10 @@ export function usePage(pageId: string | undefined) {
     // A poll failure is not worth an error banner; the next tick retries.
     if (!data) return
     const lock = data as Pick<Page, 'editing_user_id' | 'editing_heartbeat_at'>
-    setPage((prev) => (prev === null ? prev : { ...prev, ...lock }))
+    // The id guard drops an in-flight poll for a previous page — without it a
+    // late response could paint the old page's lock onto the new one for a
+    // poll period (batch reviewer, G4).
+    setPage((prev) => (prev === null || prev.id !== pageId ? prev : { ...prev, ...lock }))
   }, [pageId])
 
   return { page, missing, error, refresh, refreshLock }

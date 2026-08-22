@@ -161,10 +161,15 @@ function MessageRow({
               // Absolute, so it pastes usably anywhere; a doc page's link
               // extraction accepts its own origin (P4).
               const url = new URL(actions.linkFor(message), window.location.origin)
-              void navigator.clipboard.writeText(url.toString()).then(() => {
-                setCopied(true)
-                setTimeout(() => setCopied(false), 1500)
-              })
+              navigator.clipboard.writeText(url.toString()).then(
+                () => {
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1500)
+                },
+                // Clipboard denied or non-secure context: the icon not
+                // flipping to a check IS the feedback — nothing was copied.
+                () => setCopied(false),
+              )
             }}
           >
             {copied ? <CheckIcon className="size-3.5" /> : <Link2Icon className="size-3.5" />}
