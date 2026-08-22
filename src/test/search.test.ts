@@ -59,6 +59,12 @@ describe('jumpPathFor — the search query builder never-break path', () => {
     expect(jumpPathFor(result({ entity_type: 'task', entity_id: TASK }))).toBe(`/tasks?t=${TASK}`)
   })
 
+  it('a person has no jump path — the palette re-searches their handle instead', () => {
+    expect(
+      jumpPathFor(result({ entity_type: 'person', entity_id: 'u1', snippet: '@ethan' })),
+    ).toBeNull()
+  })
+
   it('returns null for rows that cannot be navigated', () => {
     expect(jumpPathFor(result({ entity_type: 'message', entity_id: '42' }))).toBeNull()
     expect(
@@ -92,8 +98,14 @@ describe('groupResults', () => {
     expect(groupResults(rows).size).toBe(0)
   })
 
-  it('the fixed group order covers all four entity types', () => {
-    expect(SEARCH_GROUPS.map((g) => g.type)).toEqual(['message', 'post', 'page', 'task'])
+  it('the fixed group order covers all five entity types, people first', () => {
+    expect(SEARCH_GROUPS.map((g) => g.type)).toEqual([
+      'person',
+      'message',
+      'post',
+      'page',
+      'task',
+    ])
   })
 })
 

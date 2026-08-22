@@ -5,6 +5,7 @@ import {
   KanbanIcon,
   MessageSquareTextIcon,
   MessagesSquareIcon,
+  UserRoundIcon,
 } from 'lucide-react'
 
 import {
@@ -28,6 +29,7 @@ import {
 import { supabase } from '@/lib/supabase'
 
 const GROUP_ICONS: Record<SearchEntityType, typeof FileTextIcon> = {
+  person: UserRoundIcon,
   message: MessagesSquareIcon,
   post: MessageSquareTextIcon,
   page: FileTextIcon,
@@ -164,7 +166,10 @@ export function CommandPalette({
                 <CommandGroup key={type} heading={label}>
                   {rows.map((row) => {
                     const to = jumpPathFor(row)
-                    if (to === null) return null
+                    // A person has nowhere to navigate — selecting re-runs
+                    // the search with their @username, which surfaces their
+                    // mentions. Everything else without a path is skipped.
+                    if (to === null && row.entity_type !== 'person') return null
                     // Empty for a title-only hit (e.g. a task with no
                     // description) — no second line then.
                     const segments = splitSnippet(row.snippet)
@@ -172,7 +177,10 @@ export function CommandPalette({
                       <CommandItem
                         key={`${row.entity_type}:${row.entity_id}`}
                         value={`${row.entity_type}:${row.entity_id}`}
-                        onSelect={() => go(to)}
+                        onSelect={() => {
+                          if (to !== null) go(to)
+                          else onQueryChange(row.snippet)
+                        }}
                       >
                         <Icon className="shrink-0" />
                         <span className="flex min-w-0 flex-col">

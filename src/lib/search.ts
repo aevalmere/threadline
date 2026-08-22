@@ -8,7 +8,7 @@ export const SEARCH_DEBOUNCE_MS = 300
 /** Below this, don't call — one letter matches everything and means nothing. */
 export const SEARCH_MIN_LENGTH = 2
 
-export type SearchEntityType = 'message' | 'post' | 'page' | 'task'
+export type SearchEntityType = 'person' | 'message' | 'post' | 'page' | 'task'
 
 export interface SearchResult {
   entity_type: SearchEntityType
@@ -20,8 +20,10 @@ export interface SearchResult {
   rank: number
 }
 
-/** Fixed group order for the palette, with headings. */
+/** Fixed group order for the palette, with headings. People lead — typing a
+ * name should put the person on top. */
 export const SEARCH_GROUPS: readonly { type: SearchEntityType; label: string }[] = [
+  { type: 'person', label: 'People' },
   { type: 'message', label: 'Messages' },
   { type: 'post', label: 'Posts' },
   { type: 'page', label: 'Pages' },
@@ -53,8 +55,8 @@ export function groupResults(
 
 /**
  * Where clicking a result lands, or null for a row that cannot be navigated
- * (unknown type, or a message hit missing its parent) — the palette skips
- * those rather than rendering a dead item.
+ * (a person — the palette re-searches their @username instead; an unknown
+ * type; a message hit missing its parent, which the palette skips).
  */
 export function jumpPathFor(r: SearchResult): string | null {
   switch (r.entity_type) {

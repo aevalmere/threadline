@@ -1440,3 +1440,75 @@ sweep can reclaim it after an interrupted run; title-only hits render no
 empty snippet line, and the mock's snippet matches the real function's
 (body-only) source. Accepted as-is: the create-from flows' post-commit
 throws (P2 precedent).
+
+---
+
+## #29 — 2026-08-22 — Beta round 2: the docs feel, seen-clears-bell, the mock goes, search v2
+
+Ethan's second feedback round, filed live while testing G4/G5. Everything
+shipped same day; checklist findings outrank features (#21).
+
+**The docs "embed" feel had three mechanical causes, now gone.** BlockNote
+shipped its own 54px `padding-inline` gutter, its own Inter font files, and
+its own background — and its default theme follows the *OS*, so on a dark
+machine the editor went dark inside a light site. All four are overridden in
+`editor.css` + `theme="light"`; the title is a 4xl heading in the document
+flow (Enter drops into the body), and a sticky breadcrumb bar carries
+Docs / collection / title where **the collection segment is the mover**. The
+edit-lock banner is now a small named chip in that bar.
+
+**Docs lists follow other clients by polling, not realtime** — the #27
+posture holds (publishing `pages` ships whole documents per autosave); the
+tree re-fetches on the edit-lock cadence and on window focus.
+
+**Chat URLs are links now.** `splitUrls` (pure, tested) finds them at render
+time the way mentions are found; our origin navigates in the SPA so a
+Copy-link lands on the exact message, external opens a tab. Trailing
+sentence punctuation stays out of the address.
+
+**Right-click menus** on messages (Create task / Reply / Copy link, author's
+Edit/Delete), collections (New page / Rename / Delete → arms the inline
+confirm), and page rows (Open / Copy link) — a shadcn-style wrapper over the
+`radix-ui` umbrella already in the tree, zero new dependencies. Tombstones
+keep no menu.
+
+**Seeing the message clears its bell** (*"make notif go away if they see the
+message, not if they open notif"*). Being in the target's channel or post
+with the tab visible marks the notification read and drops its toast; an
+arrival in the room you are looking at makes no surface at all. Re-checked
+when the tab becomes visible.
+
+**The mock backend is gone — supersedes #12 entirely.** Ethan: *"delete mock
+backend entirely."* #12's own exit clause ("remove it if it starts costing
+more than it saves") fires: the team beta runs against the real project, and
+the mock's cost had become drift (the G4 review's FK-fidelity finding, now
+moot — BACKLOG updated). −1,719 lines, the `supabase.ts` cast gone, one data
+layer again. What is lost with it: offline development. The **guest auth
+user** #20 parked is also deleted (admin API, on Ethan's explicit
+instruction) — the last #13 residue.
+
+**Search v2** (*"search doesnt include file names, it also needs to be
+perfect? it also doesnt have usernames"*), one migration, FAIL→fix→PASS:
+
+- **File names match, surfacing as the thing that owns them** — a message/
+  post/page/task hit with the filename as snippet — so every existing jump
+  path works and no new entity plumbing exists. The reviewer caught the trap
+  before it was baked into the stored column: the default parser reads
+  `diagram.png` as ONE `host` token (the `postgresql.org` rule), so typing
+  "diagram" would never have matched. Filenames are separator-normalized
+  (`translate` to spaces, immutable) in the column AND the headline.
+- **Titles match on substring** (ILIKE, escaped), boosted 0.4 — the reviewer
+  also caught the first draft's "small boost" (0.05) sorting *below* every
+  body-word hit (weight-B floor ≈0.24), the opposite of the claim. 0.4 sits
+  between a body-word and a title-word FTS hit, with the arithmetic in the
+  migration header. Messages stay FTS-only — no body ILIKE on the busiest
+  table.
+- **People**: a `person` entity over profiles (username/display-name
+  substring). No profile surface exists, so selecting a person re-runs the
+  search with their `@username`, which surfaces their mentions. The palette
+  renders People first by group order; rank only guards the LIMIT-50 cut.
+- The union now **dedupes on (entity_type, entity_id)** keeping the higher
+  rank — a message matching by body and by filename is one row.
+- SPEC §1.10 and §3 amended in the same commit; seed gains four v2 probes
+  (file-as-owner, dedup-to-one, partial title, person) — 86 probes, all
+  green against live after push.

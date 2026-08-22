@@ -68,7 +68,7 @@ The bell shipped in **P1**, not P5 (DECISIONS #16). One arrival produces exactly
 
 ### 1.10 Search
 
-One ⌘K box. Calls `search_all(q)` once, groups the results by `entity_type`, and jumps to the entity. Postgres FTS only.
+One ⌘K box. Calls `search_all(q)` once, groups the results by `entity_type`, and jumps to the entity — except a `person` result, which re-runs the search with that user's `@username` (there is no profile surface to jump to). Postgres FTS, plus a title/username substring fallback inside the same function (§3 v2) — still no external search service.
 
 ---
 
@@ -231,7 +231,7 @@ The bucket is **private**. Reads go through short-lived signed URLs, so an uploa
 
 ## 3. Full-text search design
 
-Four content tables carry a generated `tsvector` column plus a GIN index:
+Four content tables carry a generated `tsvector` column plus a GIN index (v2 adds a fifth on `attachments.filename`, separator-normalized so every word of a filename matches — see below):
 
 | Table | tsvector source |
 |---|---|
@@ -252,7 +252,9 @@ language sql stable security invoker
 as $$ … union all … order by rank desc limit 50 $$;
 ```
 
-`entity_id` is `text` because `messages.id` is bigint and the rest are uuid (§2.1). `parent_type`/`parent_id` exist for message hits — `('channel', channel_id)` or `('post', post_id)`, null for the other entity types — because jump-to-entity needs the parent to build `/channels/<id>?m=` vs `/posts/<id>?m=` without a per-click resolve. A message hit's `title` is its channel name or post title; tombstoned messages are excluded. Query parsing uses `websearch_to_tsquery('english', q)`. Snippets come from `ts_headline` (rich bodies re-flatten through `flatten_rich_text()` for the snippet source). Granted to `authenticated` only, `anon` revoked explicitly — the DECISIONS #18 lesson.
+`entity_id` is `text` because `messages.id` is bigint and the rest are uuid (§2.1). `parent_type`/`parent_id` exist for message hits — `('channel', channel_id)` or `('post', post_id)`, null for the other entity types — because jump-to-entity needs the parent to build `/channels/<id>?m=` vs `/posts/<id>?m=` without a per-click resolve. A message hit's `title` is its channel name or post title; tombstoned messages are excluded. Query parsing uses `websearch_to_tsquery('english', q)`. Snippets come from `ts_headline` (rich bodies re-flatten through `flatten_rich_text()` for the snippet source). Granted to `authenticated` only, `anon` **and PUBLIC** revoked explicitly — the DECISIONS #18 lesson, completed by #28.
+
+**v2 (beta round 2, Ethan's asks).** Three additions, all inside `search_all` plus one `attachments.search_tsv` on `filename`: **file names** match, surfacing as the message/post/page/task that owns the file (no new jump paths; the union dedupes on `(entity_type, entity_id)` keeping the higher rank); **titles also match on case-insensitive substring** (ILIKE, metacharacters escaped, boosted between a body-word and a title-word FTS hit — the migration header carries the numbers) so partial words find posts/pages/tasks — messages stay FTS-only; and a **`person` entity type** over profiles (username/display-name substring, `snippet = '@username'`) — the client re-runs the search with the @username instead of navigating, since no profile surface exists.
 
 **No external search service.** If FTS slips, the fallback is `ILIKE` now and FTS in September — not Meilisearch.
 

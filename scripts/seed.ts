@@ -1869,6 +1869,86 @@ async function searchCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
       : `snippet: ${msgHit?.snippet ?? 'n/a'}`,
   })
 
+  // --- v2 probes: file names, dedup, partial titles, people ---
+
+  // A file whose name carries its OWN token: the only thing matching it is
+  // the attachment, so the hit must surface as the owning message.
+  const FILE_TOKEN = 'quillzephyr'
+  const att1 = await anon.from('attachments').insert({
+    owner_type: 'message',
+    owner_id: String(msg.data.id),
+    storage_path: '__probe/none-1',
+    filename: `${FILE_TOKEN}-diagram.png`,
+  })
+  // And a second file carrying the SHARED token, so the message matches by
+  // body AND by filename — the dedup must fold that to one row.
+  const att2 = await anon.from('attachments').insert({
+    owner_type: 'message',
+    owner_id: String(msg.data.id),
+    storage_path: '__probe/none-2',
+    filename: `${TOKEN}-shot.png`,
+  })
+  if (att1.error || att2.error) {
+    out.push({
+      verb: 'search files',
+      ok: false,
+      detail: (att1.error ?? att2.error)?.message ?? 'attachment plant failed',
+    })
+  } else {
+    const byFile = await anon.rpc('search_all', { q: FILE_TOKEN })
+    const fileHits = (byFile.data ?? []) as Hit[]
+    const fileHit = fileHits.find(
+      (h) => h.entity_type === 'message' && h.entity_id === String(msg.data.id),
+    )
+    out.push({
+      verb: 'search files',
+      ok: !byFile.error && fileHit !== undefined && fileHit.snippet.includes(`⟦${FILE_TOKEN}⟧`),
+      detail: byFile.error
+        ? byFile.error.message
+        : fileHit
+          ? 'a file name surfaces as its owning message, filename as snippet'
+          : 'file-name match did not surface',
+    })
+
+    const again = await anon.rpc('search_all', { q: TOKEN })
+    const msgRows = ((again.data ?? []) as Hit[]).filter(
+      (h) => h.entity_type === 'message' && h.entity_id === String(msg.data.id),
+    )
+    out.push({
+      verb: 'search dedup',
+      ok: !again.error && msgRows.length === 1,
+      detail: `a message matching by body AND filename appears ${msgRows.length} time(s)`,
+    })
+  }
+
+  // Forgiving titles: a partial word must still find the post by substring.
+  const partial = await anon.rpc('search_all', { q: TOKEN.slice(0, 7) })
+  const partialHit = ((partial.data ?? []) as Hit[]).some(
+    (h) => h.entity_type === 'post' && h.entity_id === post.data.id,
+  )
+  out.push({
+    verb: 'search partial',
+    ok: !partial.error && partialHit,
+    detail: partial.error
+      ? partial.error.message
+      : partialHit
+        ? `"${TOKEN.slice(0, 7)}" finds the post by title substring`
+        : 'a partial word no longer matches titles',
+  })
+
+  // People: a fragment of the seed user's handle surfaces them.
+  const people = await anon.rpc('search_all', { q: 'lights' })
+  const person = ((people.data ?? []) as Hit[]).find((h) => h.entity_type === 'person')
+  out.push({
+    verb: 'search person',
+    ok: !people.error && person !== undefined && person.snippet.startsWith('@lights'),
+    detail: people.error
+      ? people.error.message
+      : person
+        ? `found ${person.snippet}`
+        : 'no person row for a username fragment',
+  })
+
   // The scaffolding decision: every planted rich body contains type:'paragraph',
   // and none of them may match the word.
   const scaffold = await anon.rpc('search_all', { q: 'paragraph' })
@@ -1908,7 +1988,11 @@ async function searchCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
       : 'tombstoned message dropped; live rows remain',
   })
 
-  // Clean up — judged, not fire-and-forget.
+  // Clean up — judged, not fire-and-forget. Attachment rows first (no FK).
+  die(
+    'remove search probe attachments',
+    (await admin.from('attachments').delete().eq('owner_id', String(msg.data.id)).eq('owner_type', 'message')).error,
+  )
   die('remove search probe message', (await admin.from('messages').delete().eq('id', msg.data.id)).error)
   die('remove search probe post', (await admin.from('posts').delete().eq('id', post.data.id)).error)
   die('remove search probe page', (await admin.from('pages').delete().eq('id', page.data.id)).error)
