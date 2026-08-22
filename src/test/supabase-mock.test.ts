@@ -780,3 +780,59 @@ describe('mock collections, pages', () => {
     await mockSupabase.from('collections').delete().eq('id', row.id as string)
   })
 })
+
+describe('mock search_all', () => {
+  it('finds a message with its parent, marks the snippet, and skips tombstones', async () => {
+    const { data: made } = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, author_id: 'u1', body: 'the zanzibar report' })
+      .select('*')
+      .single()
+    const id = (made as { id: number }).id
+    const { data: gone } = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, author_id: 'u1', body: 'zanzibar twice' })
+      .select('*')
+      .single()
+    await mockSupabase
+      .from('messages')
+      .update({ deleted_at: new Date().toISOString(), body: '' })
+      .eq('id', (gone as { id: number }).id)
+
+    const { data } = await mockSupabase.rpc('search_all', { q: 'zanzibar' })
+    const rows = data as {
+      entity_type: string
+      entity_id: string
+      parent_type: string | null
+      parent_id: string | null
+      snippet: string
+    }[]
+    expect(rows).toHaveLength(1)
+    expect(rows[0].entity_type).toBe('message')
+    expect(rows[0].entity_id).toBe(String(id))
+    expect(rows[0].parent_type).toBe('channel')
+    expect(rows[0].parent_id).toBe(CHANNEL)
+    expect(rows[0].snippet).toContain('⟦zanzibar⟧')
+
+    await mockSupabase.from('messages').delete().eq('channel_id', CHANNEL)
+  })
+
+  it('finds a task by title with null parent', async () => {
+    const { data: task } = await mockSupabase
+      .from('tasks')
+      .insert({ title: 'quixotic cleanup', status: 'todo', position: 1 })
+      .select('*')
+      .single()
+    const { data } = await mockSupabase.rpc('search_all', { q: 'quixotic' })
+    const rows = data as { entity_type: string; parent_type: string | null }[]
+    expect(rows).toHaveLength(1)
+    expect(rows[0].entity_type).toBe('task')
+    expect(rows[0].parent_type).toBeNull()
+    await mockSupabase.from('tasks').delete().eq('id', (task as { id: string }).id)
+  })
+
+  it('an empty query returns nothing', async () => {
+    const { data } = await mockSupabase.rpc('search_all', { q: '  ' })
+    expect(data).toEqual([])
+  })
+})

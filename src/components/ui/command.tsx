@@ -29,11 +29,16 @@ function Command({
 function CommandDialog({
   title = 'Command Palette',
   description = 'Search for a command to run',
+  // The dialog's prop spread reaches Radix Dialog, never cmdk — so filtering
+  // must be threaded through here. Server-ranked results (search_all) pass
+  // shouldFilter={false}; cmdk's client-side fuzzy filter stays the default.
+  shouldFilter,
   children,
   ...props
 }: React.ComponentProps<typeof Dialog> & {
   title?: string
   description?: string
+  shouldFilter?: boolean
 }) {
   return (
     <Dialog {...props}>
@@ -42,7 +47,10 @@ function CommandDialog({
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <DialogContent className="overflow-hidden p-0" showCloseButton={false}>
-        <Command className="[&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3">
+        <Command
+          shouldFilter={shouldFilter}
+          className="[&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3"
+        >
           {children}
         </Command>
       </DialogContent>

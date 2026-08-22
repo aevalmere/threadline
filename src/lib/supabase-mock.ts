@@ -605,8 +605,9 @@ export const mockSupabase = {
   },
 
   /**
-   * Postgres functions. Only `email_for_username` exists (DECISIONS #14), and
-   * it is the one thing the real client calls before it has a session.
+   * Postgres functions: `unread_counts`, `search_all`, and
+   * `email_for_username` — the last is the one thing the real client calls
+   * before it has a session (DECISIONS #14). Anything else fails loudly.
    */
   rpc: async (fn: string, args?: Record<string, unknown>) => {
     /**
@@ -641,6 +642,77 @@ export const mockSupabase = {
         return { channel_id: String(c.id), unread }
       })
       return { data: rows, error: null }
+    }
+
+    /**
+     * `search_all()` — SPEC §1.10, minimally. Substring match instead of FTS:
+     * no ranking, no stemming, static rank 0. Enough for the palette to work
+     * offline; anything relevance-shaped is only testable against the real
+     * function (npm run seed probes it). Snippets carry the same ⟦⟧ markers
+     * ts_headline is configured with, so rendering is exercised offline too.
+     */
+    if (fn === 'search_all') {
+      const q = String((args ?? {}).q ?? '')
+        .trim()
+        .toLowerCase()
+      if (q === '') return { data: [], error: null }
+
+      const mark = (text: string): string => {
+        const at = text.toLowerCase().indexOf(q)
+        if (at === -1) return text.slice(0, 120)
+        return `${text.slice(0, at)}⟦${text.slice(at, at + q.length)}⟧${text.slice(at + q.length, at + q.length + 100)}`
+      }
+      const richText = (doc: unknown): string => {
+        const parts: string[] = []
+        const walk = (node: unknown): void => {
+          if (Array.isArray(node)) return node.forEach(walk)
+          if (typeof node !== 'object' || node === null) return
+          const rec = node as Record<string, unknown>
+          if (typeof rec.text === 'string') parts.push(rec.text)
+          Object.values(rec).forEach(walk)
+        }
+        walk(doc)
+        return parts.join(' ')
+      }
+
+      const hits: Record<string, unknown>[] = []
+      for (const m of db.messages ?? []) {
+        const body = String(m.body ?? '')
+        if (m.deleted_at != null || !body.toLowerCase().includes(q)) continue
+        const channel = (db.channels ?? []).find((c) => String(c.id) === String(m.channel_id))
+        const post = (db.posts ?? []).find((p) => String(p.id) === String(m.post_id))
+        hits.push({
+          entity_type: 'message',
+          entity_id: String(m.id),
+          parent_type: m.channel_id != null ? 'channel' : 'post',
+          parent_id: String(m.channel_id ?? m.post_id),
+          title: channel ? `#${String(channel.name)}` : String(post?.title ?? ''),
+          snippet: mark(body),
+          rank: 0,
+        })
+      }
+      for (const [table, entity] of [
+        ['posts', 'post'],
+        ['pages', 'page'],
+        ['tasks', 'task'],
+      ] as const) {
+        for (const row of db[table] ?? []) {
+          const title = String(row.title ?? '')
+          const body = richText(row.body_rich ?? row.description_rich)
+          const source = `${title} ${body}`
+          if (!source.toLowerCase().includes(q)) continue
+          hits.push({
+            entity_type: entity,
+            entity_id: String(row.id),
+            parent_type: null,
+            parent_id: null,
+            title,
+            snippet: mark(body || title),
+            rank: 0,
+          })
+        }
+      }
+      return { data: hits.slice(0, 50), error: null }
     }
 
     if (fn !== 'email_for_username') {
