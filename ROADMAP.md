@@ -122,10 +122,10 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 
 - [x] Collections tree
 - [x] BlockNote pages with debounced autosave (1s)
-- [ ] Soft edit-lock — "someone is editing" banner with the editor's display name via `editing_heartbeat_at`, **no CRDT**
+- [x] Soft edit-lock — "someone is editing" banner with the editor's display name via `editing_heartbeat_at`, **no CRDT**
 - [x] Image upload into pages
-- [ ] Insert-link-to-task/message inside a page
-- [ ] "Linked items" backlink panel on pages and tasks
+- [x] Insert-link-to-task/message inside a page
+- [x] "Linked items" backlink panel on pages and tasks
 
 **GATE G4** — Two users: the second sees the editing warning · images persist · a page links to a task and the task shows the page under Linked items.
 

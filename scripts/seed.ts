@@ -154,8 +154,56 @@ async function main() {
     .eq('channel_id', general)
   console.log(`✓ messages     ${existing ?? 0} in #general, none seeded`)
 
+  // 4. Docs — one collection and one starter page, structure not content
+  //    (same reasoning as channels). Neither table has a unique natural key,
+  //    so idempotency is select-then-insert rather than upsert.
+  const handbookId = await ensureCollection('Handbook')
+  await ensurePage('Welcome', handbookId, userA)
+  console.log('✓ docs         collection "Handbook" with page "Welcome"')
+
   await threadFlatteningCheck(general, userA)
   await rlsCheck(EMAIL_A)
+}
+
+async function ensureCollection(name: string): Promise<string> {
+  const found = await admin
+    .from('collections')
+    .select('id')
+    .eq('name', name)
+    .limit(1)
+  die(`look up collection ${name}`, found.error)
+  const first = (found.data ?? [])[0] as { id: string } | undefined
+  if (first) return first.id
+  const { data, error } = await admin
+    .from('collections')
+    .insert({ name })
+    .select('id')
+    .single<{ id: string }>()
+  die(`create collection ${name}`, error)
+  return data!.id
+}
+
+async function ensurePage(
+  title: string,
+  collectionId: string,
+  createdBy: string,
+): Promise<void> {
+  const found = await admin.from('pages').select('id').eq('title', title).limit(1)
+  die(`look up page ${title}`, found.error)
+  if ((found.data ?? []).length > 0) return
+  const { error } = await admin.from('pages').insert({
+    title,
+    collection_id: collectionId,
+    created_by: createdBy,
+    // The same BlockNote paragraph shape the app writes (DECISIONS #23).
+    body_rich: [
+      {
+        type: 'paragraph',
+        content: [{ type: 'text', text: 'Team docs live here.', styles: {} }],
+      },
+    ],
+  })
+  die(`create page ${title}`, error)
 }
 
 /**
@@ -1492,6 +1540,7 @@ async function rlsCheck(email: string) {
   results.push(...(await notificationsCheck(anon)))
   results.push(...(await tasksLinksCheck(anon)))
   results.push(...(await postsTagsCheck(anon)))
+  results.push(...(await pagesCheck(anon)))
   results.push(...(await accountsCheck()))
   results.push(...(await deniedWithoutSession()))
 
@@ -1510,6 +1559,172 @@ async function rlsCheck(email: string) {
     '✓ RLS check PASSED — authenticated has full access; anon has no table ' +
       'access (only email_for_username, by design — DECISIONS #14).\n',
   )
+}
+
+/**
+ * The P4 tables — SPEC.md §1.7, §2.3. What only the database can prove: the
+ * blanket policies on `collections` and `pages` admit the four verbs for an
+ * authenticated session; `pages.updated_at` defaults on insert; and the two
+ * FK delete behaviors hold — deleting a collection CASCADES its child
+ * collections but leaves its pages un-filed (`collection_id` set null), never
+ * deleted. That last one is the migration's core promise: tree pruning must
+ * not destroy documents.
+ */
+async function pagesCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
+  const out: ProbeResult[] = []
+
+  // Pre-clean debris from an interrupted run. Pages first — their FK is set
+  // null, so removing collections first would only orphan them.
+  die(
+    'sweep stale probe pages',
+    (await admin.from('pages').delete().eq('title', '__probe_page')).error,
+  )
+  die(
+    'sweep stale probe collections',
+    (await admin.from('collections').delete().eq('name', '__probe_collection')).error,
+  )
+
+  const parent = await anon
+    .from('collections')
+    .insert({ name: '__probe_collection' })
+    .select('id')
+    .single<{ id: string }>()
+  out.push({
+    verb: 'col insert',
+    ok: !parent.error && !!parent.data,
+    detail: parent.error?.message ?? '1 row created',
+  })
+  if (!parent.data) {
+    for (const verb of [
+      'col child',
+      'page insert',
+      'page select',
+      'page update',
+      'col delete',
+      'col cascade',
+      'page unfiled',
+      'page delete',
+    ]) {
+      out.push({ verb, ok: false, detail: 'skipped — collection insert failed' })
+    }
+    return out
+  }
+  const parentId = parent.data.id
+
+  const child = await anon
+    .from('collections')
+    .insert({ name: '__probe_collection', parent_id: parentId })
+    .select('id')
+    .single<{ id: string }>()
+  out.push({
+    verb: 'col child',
+    ok: !child.error && !!child.data,
+    detail: child.error?.message ?? 'nested under the parent',
+  })
+
+  const page = await anon
+    .from('pages')
+    .insert({ title: '__probe_page', collection_id: parentId })
+    .select('id,updated_at')
+    .single<{ id: string; updated_at: string | null }>()
+  out.push({
+    verb: 'page insert',
+    ok: !page.error && !!page.data && page.data.updated_at !== null,
+    detail:
+      page.error?.message ??
+      (page.data?.updated_at !== null
+        ? '1 row created, updated_at defaulted'
+        : 'created but updated_at is null'),
+  })
+  if (!page.data) {
+    for (const verb of ['page select', 'page update', 'col delete', 'col cascade', 'page unfiled', 'page delete']) {
+      out.push({ verb, ok: false, detail: 'skipped — page insert failed' })
+    }
+    await admin.from('collections').delete().eq('id', parentId)
+    return out
+  }
+  const pageId = page.data.id
+
+  const sel = await anon.from('pages').select('id').eq('id', pageId)
+  out.push({
+    verb: 'page select',
+    ok: !sel.error && (sel.data?.length ?? 0) === 1,
+    detail: sel.error ? sel.error.message : `${sel.data?.length ?? 0} rows visible`,
+  })
+
+  const upd = await anon
+    .from('pages')
+    .update({ title: '__probe_page', updated_at: new Date().toISOString() })
+    .eq('id', pageId)
+    .select('id')
+  out.push({
+    verb: 'page update',
+    ok: !upd.error && (upd.data?.length ?? 0) === 1,
+    detail: upd.error
+      ? upd.error.message
+      : `${upd.data?.length ?? 0} rows updated${
+          (upd.data?.length ?? 0) === 0 ? ' — silently blocked by RLS' : ''
+        }`,
+  })
+
+  const delCol = await anon
+    .from('collections')
+    .delete()
+    .eq('id', parentId)
+    .select('id')
+  out.push({
+    verb: 'col delete',
+    ok: !delCol.error && (delCol.data?.length ?? 0) === 1,
+    detail: delCol.error
+      ? delCol.error.message
+      : `${delCol.data?.length ?? 0} rows deleted${
+          (delCol.data?.length ?? 0) === 0 ? ' — silently blocked by RLS' : ''
+        }`,
+  })
+
+  // The two FK behaviors, read back with admin so RLS cannot color the answer.
+  const { count: childLeft } = await admin
+    .from('collections')
+    .select('id', { count: 'exact', head: true })
+    .eq('id', child.data?.id ?? '00000000-0000-4000-8000-000000000000')
+  out.push({
+    verb: 'col cascade',
+    ok: (childLeft ?? 0) === 0,
+    detail:
+      (childLeft ?? 0) === 0
+        ? 'child collection cascaded with its parent'
+        : 'child collection SURVIVED its parent — cascade missing',
+  })
+
+  const unfiled = await admin
+    .from('pages')
+    .select('collection_id')
+    .eq('id', pageId)
+    .maybeSingle<{ collection_id: string | null }>()
+  out.push({
+    verb: 'page unfiled',
+    ok: !unfiled.error && unfiled.data !== null && unfiled.data.collection_id === null,
+    detail: unfiled.error
+      ? unfiled.error.message
+      : unfiled.data === null
+        ? 'page was DELETED by the collection cascade — set null missing'
+        : unfiled.data.collection_id === null
+          ? 'page survived un-filed (collection_id null)'
+          : 'page still points at the deleted collection',
+  })
+
+  const delPage = await anon.from('pages').delete().eq('id', pageId).select('id')
+  out.push({
+    verb: 'page delete',
+    ok: !delPage.error && (delPage.data?.length ?? 0) === 1,
+    detail: delPage.error
+      ? delPage.error.message
+      : `${delPage.data?.length ?? 0} rows deleted${
+          (delPage.data?.length ?? 0) === 0 ? ' — silently blocked by RLS' : ''
+        }`,
+  })
+
+  return out
 }
 
 /**
@@ -1719,6 +1934,69 @@ async function deniedWithoutSession() {
       .from('tags')
       .delete()
       .eq('id', plantedTagId)).error)
+  }
+
+  // Collections and pages — the P4 tables, same planted-row discipline.
+  die(
+    'sweep stale anon probe collections',
+    (await admin.from('collections').delete().eq('name', '__anon_probe')).error,
+  )
+  const plantedColId = crypto.randomUUID()
+  const plantedCol = await admin
+    .from('collections')
+    .insert({ id: plantedColId, name: '__anon_probe' })
+  if (plantedCol.error) {
+    out.push({
+      verb: 'anon cols',
+      ok: false,
+      detail: `could not plant a probe collection: ${plantedCol.error.message}`,
+    })
+  } else {
+    const c = await anon.from('collections').select('id').limit(1)
+    const cVisible = c.data?.length ?? 0
+    const canReadCols = !c.error && cVisible > 0
+    out.push({
+      verb: 'anon cols',
+      ok: !canReadCols,
+      detail: canReadCols
+        ? `${cVisible} collection rows readable without a session`
+        : 'denied (with a row present, so this means denied and not empty)',
+    })
+    die('remove the planted anon probe collection', (await admin
+      .from('collections')
+      .delete()
+      .eq('id', plantedColId)).error)
+  }
+
+  die(
+    'sweep stale anon probe pages',
+    (await admin.from('pages').delete().eq('title', '__anon_probe')).error,
+  )
+  const plantedPageId = crypto.randomUUID()
+  const plantedPage = await admin
+    .from('pages')
+    .insert({ id: plantedPageId, title: '__anon_probe' })
+  if (plantedPage.error) {
+    out.push({
+      verb: 'anon pages',
+      ok: false,
+      detail: `could not plant a probe page: ${plantedPage.error.message}`,
+    })
+  } else {
+    const pg = await anon.from('pages').select('id').limit(1)
+    const pgVisible = pg.data?.length ?? 0
+    const canReadPages = !pg.error && pgVisible > 0
+    out.push({
+      verb: 'anon pages',
+      ok: !canReadPages,
+      detail: canReadPages
+        ? `${pgVisible} page rows readable without a session`
+        : 'denied (with a row present, so this means denied and not empty)',
+    })
+    die('remove the planted anon probe page', (await admin
+      .from('pages')
+      .delete()
+      .eq('id', plantedPageId)).error)
   }
 
   // `unread_counts()` is granted to `authenticated` only (DECISIONS #18) and
