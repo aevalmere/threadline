@@ -2,14 +2,28 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import type { BlockNoteEditor } from '@blocknote/core'
-import { Trash2Icon } from 'lucide-react'
+import { PencilLineIcon, Trash2Icon } from 'lucide-react'
 
 import PageEditor from '@/components/docs/PageEditor'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/lib/auth-context'
-import { AUTOSAVE_DEBOUNCE_MS, type Page } from '@/lib/pages'
-import { deletePageRecord, savePageRecord, syncPageLinks, usePage } from '@/lib/useDocs'
+import {
+  AUTOSAVE_DEBOUNCE_MS,
+  EDIT_LOCK_POLL_MS,
+  HEARTBEAT_INTERVAL_MS,
+  editingBanner,
+  type Page,
+} from '@/lib/pages'
+import { useProfiles } from '@/lib/profiles-context'
+import {
+  claimEdit,
+  deletePageRecord,
+  releaseEdit,
+  savePageRecord,
+  syncPageLinks,
+  usePage,
+} from '@/lib/useDocs'
 
 /**
  * One doc page — SPEC §1.7. The route shell owns the fetch, the not-found
@@ -26,7 +40,7 @@ export default function PageView({
   onDeleted: () => void
 }) {
   const { pageId } = useParams<{ pageId: string }>()
-  const { page, missing, error } = usePage(pageId)
+  const { page, missing, error, refreshLock } = usePage(pageId)
 
   if (missing) {
     return (
@@ -57,21 +71,32 @@ export default function PageView({
     )
   }
 
-  return <PageSurface key={page.id} page={page} onChanged={onChanged} onDeleted={onDeleted} />
+  return (
+    <PageSurface
+      key={page.id}
+      page={page}
+      refreshLock={refreshLock}
+      onChanged={onChanged}
+      onDeleted={onDeleted}
+    />
+  )
 }
 
 type SaveState = 'saved' | 'saving' | 'error'
 
 function PageSurface({
   page,
+  refreshLock,
   onChanged,
   onDeleted,
 }: {
   page: Page
+  refreshLock: () => Promise<void>
   onChanged: () => void
   onDeleted: () => void
 }) {
   const { authorId } = useAuth()
+  const { nameFor } = useProfiles()
   const [title, setTitle] = useState(page.title)
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -113,21 +138,50 @@ function PageSurface({
     }
   }, [page.id, page.body_rich, onChanged])
 
+  // The soft edit-lock (SPEC §1.7). Claimed on the FIRST content change —
+  // viewing never claims — then refreshed every HEARTBEAT_INTERVAL_MS while
+  // this page stays open. Fire-and-forget: a missed beat only degrades the
+  // banner, and the interval retries.
+  const claimed = useRef(false)
+  const heartbeat = useRef<ReturnType<typeof setInterval> | null>(null)
+  const authorRef = useRef(authorId)
+  authorRef.current = authorId
+
   const markDirty = useCallback(() => {
     dirty.current = true
     if (timer.current === null) {
       timer.current = setTimeout(() => void flush(), AUTOSAVE_DEBOUNCE_MS)
     }
-  }, [flush])
+    const me = authorRef.current
+    if (!claimed.current && me !== null) {
+      claimed.current = true
+      void claimEdit(page.id, me)
+      heartbeat.current = setInterval(() => void claimEdit(page.id, me), HEARTBEAT_INTERVAL_MS)
+    }
+  }, [flush, page.id])
+
+  // Readers poll the lock columns so the banner tracks reality within one
+  // poll period — pages are deliberately not in the realtime publication.
+  useEffect(() => {
+    const poll = setInterval(() => void refreshLock(), EDIT_LOCK_POLL_MS)
+    return () => clearInterval(poll)
+  }, [refreshLock])
 
   // Unmount flush — covers navigating to another page or out of docs. Bound
   // through a ref so this cleanup runs exactly once, at real unmount, no
   // matter how often the callbacks above are recreated.
   const flushRef = useRef(flush)
   flushRef.current = flush
+  const pageIdRef = useRef(page.id)
   useEffect(() => {
     return () => {
       void flushRef.current()
+      if (heartbeat.current !== null) clearInterval(heartbeat.current)
+      // Release only a claim we hold — the .eq guard inside releaseEdit also
+      // keeps a stale unmount from clobbering a teammate's newer claim.
+      if (claimed.current && authorRef.current !== null) {
+        void releaseEdit(pageIdRef.current, authorRef.current)
+      }
     }
   }, [])
 
@@ -139,8 +193,21 @@ function PageSurface({
   // shape). A page whose creator's account is gone unlocks for everyone.
   const canDelete = page.created_by === null || page.created_by === authorId
 
+  // Re-evaluated on every render; the poll's setPage keeps renders coming, so
+  // a stale claim drops within one poll period.
+  const editingUserId = editingBanner(page, authorId, Date.now())
+
   return (
     <div className="mx-auto max-w-3xl space-y-3 p-6">
+      {editingUserId !== null && (
+        <div
+          role="status"
+          className="bg-muted text-muted-foreground flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+        >
+          <PencilLineIcon className="size-4 shrink-0" />
+          {nameFor(editingUserId)} is editing this page
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <input
           value={title}
