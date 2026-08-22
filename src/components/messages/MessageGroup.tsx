@@ -14,6 +14,13 @@ import { AuthorAvatar } from '@/components/layout/AuthorAvatar'
 import { AttachmentView } from '@/components/messages/AttachmentView'
 import type { MessageActions, PreviewItem } from '@/components/messages/types'
 import { Button } from '@/components/ui/button'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 import type { Attachment } from '@/lib/attachments'
 import { useAuth } from '@/lib/auth-context'
 import { splitMentions } from '@/lib/mentions'
@@ -99,7 +106,22 @@ function MessageRow({
   const { authorId } = useAuth()
   const mine = message.author_id === authorId
 
-  return (
+  function copyLink() {
+    // Absolute, so it pastes usably anywhere; a doc page's link extraction
+    // accepts its own origin (P4).
+    const url = new URL(actions.linkFor(message), window.location.origin)
+    navigator.clipboard.writeText(url.toString()).then(
+      () => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      },
+      // Clipboard denied or non-secure context: the icon not flipping to a
+      // check IS the feedback — nothing was copied.
+      () => setCopied(false),
+    )
+  }
+
+  const row = (
     <div
       // The anchor a notification's `?m=` jumps to and flashes.
       id={`message-${message.id}`}
@@ -159,20 +181,7 @@ function MessageRow({
             variant="ghost"
             size="icon"
             className="size-7"
-            onClick={() => {
-              // Absolute, so it pastes usably anywhere; a doc page's link
-              // extraction accepts its own origin (P4).
-              const url = new URL(actions.linkFor(message), window.location.origin)
-              navigator.clipboard.writeText(url.toString()).then(
-                () => {
-                  setCopied(true)
-                  setTimeout(() => setCopied(false), 1500)
-                },
-                // Clipboard denied or non-secure context: the icon not
-                // flipping to a check IS the feedback — nothing was copied.
-                () => setCopied(false),
-              )
-            }}
+            onClick={copyLink}
           >
             {copied ? <CheckIcon className="size-3.5" /> : <Link2Icon className="size-3.5" />}
             <span className="sr-only">{copied ? 'Link copied' : 'Copy link'}</span>
@@ -202,6 +211,40 @@ function MessageRow({
         </div>
       )}
     </div>
+  )
+
+  // Tombstones keep no actions, so no menu either.
+  if (deleted) return row
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={() => actions.onCreateTask(message)}>
+          <ListTodoIcon /> Create task
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => actions.onReply(message)}>
+          <MessageSquareIcon /> Reply
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={copyLink}>
+          <Link2Icon /> Copy link
+        </ContextMenuItem>
+        {mine && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onSelect={() => setEditing(true)}>
+              <PencilIcon /> Edit message
+            </ContextMenuItem>
+            <ContextMenuItem
+              variant="destructive"
+              onSelect={() => actions.onRequestDelete(message)}
+            >
+              <Trash2Icon /> Delete message
+            </ContextMenuItem>
+          </>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 

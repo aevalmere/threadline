@@ -7,12 +7,20 @@ import {
   FilePlusIcon,
   FileTextIcon,
   FolderIcon,
+  Link2Icon,
   PencilIcon,
   PlusIcon,
   Trash2Icon,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 import {
   Dialog,
   DialogContent,
@@ -303,7 +311,9 @@ function CollectionNode({
 
   return (
     <>
-      <li
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <li
         // Opacity reveal, not display — the action buttons stay tabbable
         // (DECISIONS #24's keyboard rule).
         className="group flex items-center gap-1 rounded px-1 py-1"
@@ -347,6 +357,22 @@ function CollectionNode({
           )}
         </span>
       </li>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onSelect={onNewPage}>
+            <FilePlusIcon /> New page
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={onRename}>
+            <PencilIcon /> Rename
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          {/* Arms the row's inline Confirm? instead of deleting outright —
+              the same two-step every destructive action here takes. */}
+          <ContextMenuItem variant="destructive" onSelect={() => setConfirming(true)}>
+            <Trash2Icon /> Delete
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
       {!collapsed &&
         pages.map((p) => (
           <PageRow key={p.id} page={p} indent={row.depth * 12 + 24} />
@@ -371,19 +397,38 @@ function UnfiledPages({ pages }: { pages: PageMeta[] }) {
 
 function PageRow({ page, indent }: { page: PageMeta; indent: number }) {
   const location = useLocation()
+  const navigate = useNavigate()
   const active = location.pathname === `/docs/${page.id}`
   return (
-    <li>
-      <Link
-        to={`/docs/${page.id}`}
-        aria-current={active ? 'page' : undefined}
-        className={`${active ? 'bg-accent' : 'hover:bg-accent/40'} flex items-center gap-1.5 rounded px-1 py-1`}
-        style={{ paddingLeft: `${indent}px` }}
-      >
-        <FileTextIcon className="text-muted-foreground size-3.5 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-sm">{page.title}</span>
-      </Link>
-    </li>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <li>
+          <Link
+            to={`/docs/${page.id}`}
+            aria-current={active ? 'page' : undefined}
+            className={`${active ? 'bg-accent' : 'hover:bg-accent/40'} flex items-center gap-1.5 rounded px-1 py-1`}
+            style={{ paddingLeft: `${indent}px` }}
+          >
+            <FileTextIcon className="text-muted-foreground size-3.5 shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-sm">{page.title}</span>
+          </Link>
+        </li>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={() => navigate(`/docs/${page.id}`)}>
+          <FileTextIcon /> Open
+        </ContextMenuItem>
+        <ContextMenuItem
+          onSelect={() =>
+            void navigator.clipboard.writeText(
+              new URL(`/docs/${page.id}`, window.location.origin).toString(),
+            )
+          }
+        >
+          <Link2Icon /> Copy link
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 
