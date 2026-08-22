@@ -69,7 +69,22 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 
 **GATE G2** — Convert a real message to a task · drag it across columns · refresh and the order holds · the task's "from #channel" link jumps to the exact message.
 
-> **On G2 pass: TEAM BETA.** The user invites the whole team and daily chatter moves to Threadline. From here **real usage is the test suite** — triage team-reported bugs before new features every day.
+> **Gate run 2026-08-18 — machine side PASS.** `npm run build` exit 0 (690.57 kB / 205.50 kB gzip — dnd-kit is the growth; warning stays un-silenced per DECISIONS #20), `npm run lint` exit 0, `npm run test` 271 tests / 13 files green, `npm run seed` 48/48 probes green against live Supabase including the eight new tasks/links probes and the planted-row anon denial. Migration reviewed pre-push (PASS), then a 25-agent adversarial review over the phase diff — seven confirmed findings, all fixed (DECISIONS #24) — then the binding batch reviewer: **PASS** with six non-blocking notes, two fixed in the gate commit.
+>
+> **All four acceptance items need a browser, so none is PASS on Claude's authority** — they are Ethan's production checklist below. `GATE G2 (machine): PASS`.
+>
+> **Ethan's G2 checklist** (~5 min on https://threadline-cc0.pages.dev, after the deploy finishes; two tasks exist by step 3, so make two):
+> 1. In any channel, hover a message → the new checklist icon → **Create task**. Title comes prefilled; set **Assignee: you** and **Due: yesterday**; Create.
+> 2. Open **Tasks** — the card is in *To do*, the due date is red, and it carries a **from #channel** chip.
+> 3. Create a second task with **New task**, then **drag** the first card to *Doing*, then drop it **onto** the second card — it takes that card's place.
+> 4. **Hard-refresh** — the order holds exactly.
+> 5. Click the card's **from #channel** chip — the channel opens, scrolls to the exact message, and flashes it. (Deep version: `npm run blast` 250 messages first, then chip-jump across them; `npm run blast -- --clean` after.)
+> 6. Open a card, change status with the **buttons** (the no-drag path), then **Delete → Confirm delete**.
+> 7. **My tasks** tab lists what is assigned to you, due-date first.
+>
+> **Still open from G1 (async):** the G1 two-browser checklist · delete the `guest` auth user · confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages.
+
+> **On G2 pass: TEAM BETA.** The user invites the whole team and daily chatter moves to Threadline. From here **real usage is the test suite** — triage team-reported bugs before new features every day. **Inviting the team is inherently Ethan's call — this handoff stays blocking (DECISIONS #21).**
 
 ---
 

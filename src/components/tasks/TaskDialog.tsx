@@ -55,8 +55,8 @@ export function TaskDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
-        {/* Keyed remount so a reopened dialog starts from `initial`, not from
-            whatever the last edit left in state. */}
+        {/* Mounted only while open, so a reopened dialog starts from
+            `initial` instead of whatever the last edit left in state. */}
         {open && (
           <TaskForm
             title={title}

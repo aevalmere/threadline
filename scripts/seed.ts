@@ -1273,6 +1273,13 @@ async function deniedWithoutSession() {
   // none at all. Without this the probe would print PASS having proven
   // nothing, which is exactly the hollow verification DECISIONS #5 exists to
   // prevent. Planted with `admin`, so it exists regardless of policy.
+  // Pre-clean first: a run killed between plant and delete would otherwise
+  // strand the row forever, since the id-scoped delete below is the only
+  // thing that removes it.
+  die(
+    'sweep stale anon probe notifications',
+    (await admin.from('notifications').delete().eq('entity_id', '__anon_probe')).error,
+  )
   const plantedId = crypto.randomUUID()
   const planted = await admin.from('notifications').insert({
     id: plantedId,
@@ -1311,6 +1318,10 @@ async function deniedWithoutSession() {
 
   // Tasks carry team plans; same planted-row discipline as notifications —
   // an empty table returns [] under any policy, so plant first, then judge.
+  die(
+    'sweep stale anon probe tasks',
+    (await admin.from('tasks').delete().eq('title', '__anon_probe')).error,
+  )
   const plantedTaskId = crypto.randomUUID()
   const plantedTask = await admin.from('tasks').insert({
     id: plantedTaskId,
