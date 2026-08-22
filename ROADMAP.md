@@ -173,8 +173,8 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 
 - [ ] Team bug-bash fixes — **priority over everything**
 - [x] Data-export button — authenticated JSON dump of all content tables. **Day-one insurance, do not skip** *(shipped early, 2026-08-22 — the rest of P6 is calendar- or beta-gated)*
-- [ ] Dependency freeze — Aug 28
-- [ ] Clean-environment redeploy rehearsal — Aug 30
+- [x] Dependency freeze — Aug 28 *(declared early, 2026-08-22: the app is feature-complete, so nothing buys waiting. From here `package.json` changes only if a priority-one fix demands one, recorded in DECISIONS.)*
+- [ ] Clean-environment redeploy rehearsal — Aug 30 *(repo half rehearsed 2026-08-22: fresh clone → `npm ci` → secret-less mock build → 357 tests, all green — the repository is self-contained. Remaining for the real run: migration replay against a fresh database — watch DECISIONS #28's BOM file — and the Cloudflare env.)*
 - [ ] Timeboxed polish
 - [ ] **SHIP — Aug 31**
 
