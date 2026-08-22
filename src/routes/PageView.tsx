@@ -172,18 +172,20 @@ function PageSurface({
   // matter how often the callbacks above are recreated.
   const flushRef = useRef(flush)
   flushRef.current = flush
-  const pageIdRef = useRef(page.id)
   useEffect(() => {
+    // page.id never changes for a mounted PageSurface (the parent keys on
+    // it), so this still runs exactly once per page.
+    const pageId = page.id
     return () => {
       void flushRef.current()
       if (heartbeat.current !== null) clearInterval(heartbeat.current)
       // Release only a claim we hold — the .eq guard inside releaseEdit also
       // keeps a stale unmount from clobbering a teammate's newer claim.
       if (claimed.current && authorRef.current !== null) {
-        void releaseEdit(pageIdRef.current, authorRef.current)
+        void releaseEdit(pageId, authorRef.current)
       }
     }
-  }, [])
+  }, [page.id])
 
   const onEditorReady = useCallback((editor: BlockNoteEditor) => {
     editorRef.current = editor
