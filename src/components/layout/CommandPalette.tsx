@@ -56,16 +56,39 @@ export function CommandPalette({
   // Responses can land out of order; only the newest request may paint.
   const seq = useRef(0)
 
+  const close = useCallback(() => {
+    setOpen(false)
+    setQuery('')
+    queryRef.current = ''
+    setResults(null)
+    setError(null)
+    seq.current++
+    if (timer.current !== null) {
+      clearTimeout(timer.current)
+      timer.current = null
+    }
+  }, [setOpen])
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
-        setOpen(!open)
+        // Through close(), not a bare setOpen(false) — the toggle must reset
+        // the query and cancel the pending debounce like Escape does.
+        if (open) close()
+        else setOpen(true)
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [open, setOpen])
+  }, [open, setOpen, close])
+
+  // A timer queued at unmount would fire into nothing — clear it.
+  useEffect(() => {
+    return () => {
+      if (timer.current !== null) clearTimeout(timer.current)
+    }
+  }, [])
 
   const runSearch = useCallback(async () => {
     timer.current = null
@@ -99,19 +122,6 @@ export function CommandPalette({
     }
     if (timer.current === null) {
       timer.current = setTimeout(() => void runSearch(), SEARCH_DEBOUNCE_MS)
-    }
-  }
-
-  function close() {
-    setOpen(false)
-    setQuery('')
-    queryRef.current = ''
-    setResults(null)
-    setError(null)
-    seq.current++
-    if (timer.current !== null) {
-      clearTimeout(timer.current)
-      timer.current = null
     }
   }
 
@@ -155,6 +165,9 @@ export function CommandPalette({
                   {rows.map((row) => {
                     const to = jumpPathFor(row)
                     if (to === null) return null
+                    // Empty for a title-only hit (e.g. a task with no
+                    // description) — no second line then.
+                    const segments = splitSnippet(row.snippet)
                     return (
                       <CommandItem
                         key={`${row.entity_type}:${row.entity_id}`}
@@ -164,17 +177,19 @@ export function CommandPalette({
                         <Icon className="shrink-0" />
                         <span className="flex min-w-0 flex-col">
                           <span className="truncate font-medium">{row.title}</span>
-                          <span className="text-muted-foreground truncate text-xs">
-                            {splitSnippet(row.snippet).map((seg, i) =>
-                              seg.match ? (
-                                <span key={i} className="bg-primary/20 text-foreground rounded-[2px]">
-                                  {seg.text}
-                                </span>
-                              ) : (
-                                <span key={i}>{seg.text}</span>
-                              ),
-                            )}
-                          </span>
+                          {segments.length > 0 && (
+                            <span className="text-muted-foreground truncate text-xs">
+                              {segments.map((seg, i) =>
+                                seg.match ? (
+                                  <span key={i} className="bg-primary/20 text-foreground rounded-[2px]">
+                                    {seg.text}
+                                  </span>
+                                ) : (
+                                  <span key={i}>{seg.text}</span>
+                                ),
+                              )}
+                            </span>
+                          )}
                         </span>
                       </CommandItem>
                     )

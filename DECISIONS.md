@@ -1368,3 +1368,75 @@ page whose document still links a deleted task re-inserts a dangling
 `references` edge on its next save (invisible today; `links` also lacks a
 unique constraint, so racing tabs can double-insert an edge — backlinks
 dedupe, so also invisible).
+
+---
+
+## #28 — 2026-08-22 — P5 build: the search decisions, and a grant lesson learned the hard way twice
+
+**SPEC §3 was amended twice, both deviations measured before they shipped.**
+
+*The flattening is `strict $.**."text"` + `silent`, not the sketch's bare
+`jsonb_to_tsvector` — and not even plain lax jsonpath.* The bare form indexes
+BlockNote scaffolding, so "paragraph" would match every document — #25 flagged
+that; the finer trap the pre-push reviewer caught is that **lax mode's array
+auto-unwrapping collects every text value TWICE** (once via the content array,
+once via the inline node). Measured against the live database over a document
+with nested children, link content, and both table-cell shapes: lax returned
+every value duplicated, strict+silent returned each exactly once. Doubled
+lexemes would have been baked into three generated columns that only a table
+rewrite can change, and doubled sentences into every snippet. The known,
+accepted residue: image *captions* live under non-"text" keys and are not
+indexed.
+
+*`search_all` returns `parent_type`/`parent_id`* beyond the sketch's columns,
+because a message hit is un-navigable without its parent (`/channels/<id>?m=`
+vs `/posts/<id>?m=`). And its snippets carry **⟦⟧ markers, not ts_headline's
+default `<b>` tags** — the source text is user-authored, so HTML would force
+`dangerouslySetInnerHTML`; markers parse into plain React segments
+(`splitSnippet`). The messages branch re-weights its unweighted P0 vector at
+query time (`setweight(m.search_tsv, 'B')` in the target list only, the `@@`
+predicate still hits the GIN) — without it every chat hit ranked ~4–10× below
+an equivalent doc hit and the global LIMIT could squeeze messages out
+entirely, against G5's first clause.
+
+**The #18 lesson, half-applied and caught at birth.** The search migration
+revoked `search_all` `from anon` and cited unread_counts as precedent — but
+the precedent was TWO revokes: its original migration had already stripped
+the implicit PUBLIC grant, and the follow-up removed the explicit anon one.
+Mine did only the anon half; the function ACL's `=X/postgres` PUBLIC entry
+(confirmed by `pg_proc.proacl` inspection) still let a sessionless client
+execute. The seed's `anon search` probe — written to assert **refusal, never
+emptiness**, exactly as the #18 postmortem demanded — failed on its very
+first run, and a second reviewed migration closed both functions. The rule,
+now stated completely: **a new function needs `revoke all ... from public`
+AND `revoke ... from anon`, and its birth commit carries a 42501 probe.**
+`flatten_rich_text` gets the same treatment and its own probe, since RLS
+cannot even pretend to cover a function that reads no tables.
+
+**Assignment notifications are client-written like mentions (#15).**
+`assignmentNoticeRow` is null on self-assign and on unassign; the insert
+happens after the task write settles, at all four assignee write paths.
+`updateTask` compares against the assignee captured from hook state before
+the write, because `patchFromFields` always carries `assignee_id` — the patch
+alone cannot say whether it changed. On plain create the notice failure is
+surfaced on the board rather than thrown: a throw would keep the dialog open
+over a task that WAS committed, and a retry would create a second one (batch
+review finding). The create-from-message/post paths keep P2's thrown
+"saved, but…" shape. The bell needed only a navigation branch —
+`entity_type='task'` → `/tasks?t=` — its label had been waiting since P1.
+
+**A confession for the P6 redeploy rehearsal.** The applied search migration
+carries a UTF-8 BOM: a PowerShell regex-rewrite re-encoded it — **#25's exact
+trap, hit again by the same tool a session after recording it**. The CLI
+applied the file cleanly (it is the only applier), so per Non-negotiable 6 it
+stays byte-for-byte as applied. If any other tool ever replays migrations,
+this file is the one to watch. Source rewrites go through the editor tools;
+this time it is written where the rule can bite.
+
+**Carried from the batch review (PASS, six notes).** Fixed at the gate:
+⌘K-toggle now resets through `close()`; the debounce timer clears on
+unmount; the seed's tombstone probe keeps a findable body so the pre-clean
+sweep can reclaim it after an interrupted run; title-only hits render no
+empty snippet line, and the mock's snippet matches the real function's
+(body-only) source. Accepted as-is: the create-from flows' post-commit
+throws (P2 precedent).

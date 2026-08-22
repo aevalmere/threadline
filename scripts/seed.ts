@@ -1885,10 +1885,13 @@ async function searchCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
         : 'searching "paragraph" does not match documents that never say it',
   })
 
-  // Tombstones stay out.
+  // Tombstones stay out. deleted_at alone — the app also blanks the body,
+  // but exclusion is deleted_at-driven, and KEEPING the token in the body is
+  // what lets the pre-clean ilike sweep reclaim this row if a run dies
+  // between here and the cleanup below (batch review finding at G5).
   const del = await anon
     .from('messages')
-    .update({ deleted_at: new Date().toISOString(), body: '' })
+    .update({ deleted_at: new Date().toISOString() })
     .eq('id', msg.data.id)
     .select('id')
   const after = await anon.rpc('search_all', { q: TOKEN })

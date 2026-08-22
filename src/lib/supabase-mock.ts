@@ -707,7 +707,9 @@ export const mockSupabase = {
             parent_type: null,
             parent_id: null,
             title,
-            snippet: mark(body || title),
+            // Empty for a body-less row, like the real function: its snippet
+            // source is the flattened body, never the title.
+            snippet: mark(body),
             rank: 0,
           })
         }

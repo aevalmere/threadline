@@ -78,13 +78,24 @@ export function useTasks() {
     if (err || !data) throw new Error(err?.message ?? 'Could not create the task.')
     const task = data as Task
     setTasks((cur) => (cur ? [...cur, task] : cur))
-    await insertAssignmentNotice(
-      assignmentNoticeRow({
-        taskId: task.id,
-        assigneeId: task.assignee_id,
-        actorId: payload.created_by,
-      }),
-    )
+    try {
+      await insertAssignmentNotice(
+        assignmentNoticeRow({
+          taskId: task.id,
+          assigneeId: task.assignee_id,
+          actorId: payload.created_by,
+        }),
+      )
+    } catch (noticeErr) {
+      // The task IS committed — a throw here would keep the create dialog
+      // open, and a retry would write a second task (batch review finding).
+      // The board's error line carries it instead.
+      setError(
+        noticeErr instanceof Error
+          ? noticeErr.message
+          : 'Task saved, but the assignee was not notified.',
+      )
+    }
     return task
   }, [])
 

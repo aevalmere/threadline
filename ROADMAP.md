@@ -147,12 +147,25 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 
 ## P5 — Search & notifications · Aug 26–27 *(orig. Aug 24–25)*
 
-- [ ] ⌘K unified search calling `search_all` — grouped results, jump-to-entity
-- [ ] `search_tsv` + GIN on `posts`, `pages`, `tasks` *(`messages` already has it from P0)*
-- [x] ~~In-app notification bell — mentions, assignments, replies — with mark-read~~ **shipped in P1** (DECISIONS #16). What remains here: `assignment` notifications, which need P2's `tasks` table.
-- [ ] Vitest: search query builder
+- [x] ⌘K unified search calling `search_all` — grouped results, jump-to-entity
+- [x] `search_tsv` + GIN on `posts`, `pages`, `tasks` *(`messages` already has it from P0)*
+- [x] ~~In-app notification bell — mentions, assignments, replies — with mark-read~~ **shipped in P1** (DECISIONS #16). What remained here — `assignment` notifications — **shipped at P5**.
+- [x] Vitest: search query builder
 
 **GATE G5** — One search box finds a phrase from a week-old chat message, a task by title, and a doc by heading text · bell shows a mention within seconds.
+
+> **Gate run 2026-08-22 — machine side PASS.** `npm run build` exit 0 (entry **728.27 kB / 214.33 kB gzip** — +1.5 kB gzip for the whole search UI, zero new dependencies; the docs chunk unchanged), `npm run lint` exit 0, `npm run test` 351 tests / 16 files green, `npm run seed` **82/82 probes** green — including the six new search probes (union across all four tables · a body-less page still matches on its title, proving the coalesce · message hits carry `(channel, #general)` · bracket-marker snippets · the scaffolding decision: searching "paragraph" matches no document that never says it · tombstones drop) and three function-refusal probes (`unread_counts`, `search_all`, `flatten_rich_text` all `42501` sessionless). A scripted live probe replicated the bell's exact subscription as user B while user A inserted the assignment row `useTasks` writes — received within seconds, after first timing out on a cold pipeline, which is DECISIONS #20's warm-up trap **reconfirmed a third time**. Both migrations were reviewed pre-push: the search migration **FAIL→fix→PASS** (lax-mode jsonpath collected every text value twice — measured live before and after; fixed with `strict`+`silent` — plus query-time re-weighting of the unweighted P0 messages vector), and the first post-push seed run then caught `search_all` still executable by `anon` (the #18 lesson half-applied: the explicit anon grant was revoked but the PUBLIC ACL entry remained) — closed by a second reviewed migration, verified by ACL inspection and the 42501 probes. Batch reviewer over the whole phase diff (3 commits, 14 files, +1.1k/−42): **PASS** with six non-blocking notes — four fixed in the gate commit (⌘K-toggle now resets through close(), timer cleanup on unmount, a failed assignment notice on plain create no longer traps the dialog into double-creating, the seed's tombstone probe keeps its findable body, title-only hits render no empty snippet line + mock parity), one recorded (the search migration file carries a UTF-8 BOM from a PowerShell rewrite — DECISIONS #25's trap; already applied cleanly by the CLI, left untouched per Non-negotiable 6, noted for the P6 redeploy rehearsal), one is the DECISIONS #28 entry landing in this commit.
+>
+> **The acceptance items' visual halves need a browser and two users** — Ethan's checklist below. `GATE G5 (machine): PASS`.
+>
+> **Ethan's G5 checklist** (~5 min on https://threadline-cc0.pages.dev after the deploy finishes; two windows, two users):
+> 1. **⌘K** (or Ctrl+K) anywhere → type a phrase you remember from an old chat message → a **Messages** group appears titled `#channel`, matched words highlighted → click → you land in the channel scrolled to that exact message, flashed.
+> 2. ⌘K → type a task's title → **Tasks** group → click → the task's dialog opens on the board.
+> 3. ⌘K → type `team docs` → **Pages** group shows **Welcome** → click → the page opens. (Post titles work the same under **Posts**.)
+> 4. In window A, open a task and set **Assignee** to window B's account → B's bell rings within seconds — "… assigned you a task" — and clicking it opens that task's dialog. (Hidden-tab variant: keep B's tab backgrounded and it arrives as a browser notification.)
+> 5. Mention B in a channel from A → B's bell shows it within seconds (the gate line's second half, re-affirming G1's realtime path).
+>
+> **Still open (async), updated 2026-08-22:** the G3 checklist · the G4 checklist · this G5 checklist · delete the `guest` auth user · confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages · **TEAM BETA — inviting the team stays blocking on Ethan (DECISIONS #21).**
 
 ---
 
