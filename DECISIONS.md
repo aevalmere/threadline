@@ -1557,3 +1557,10 @@ modified `graph.json` after a code commit is the hook working, not drift.
 Known gap: `src/test/safe-next.test.ts` has a character at line 49 that
 tree-sitter-typescript rejects, so that one file indexes without symbols —
 the character is the test's point; the source is untouched.
+
+*Addendum, same day:* after the hook's first rebuild showed it indexes
+markdown *heading structure* (no LLM) for docs touched in a commit, a
+single `graphify update .` set one consistent baseline — code plus the
+heading structure of all 58 docs: **1127 nodes · 2138 edges · 117
+communities**, heuristic hub labels in `.graphify_labels.json` (+`.sig`,
+both committed), dated backup folders ignored. Still zero tokens.
