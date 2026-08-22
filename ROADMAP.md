@@ -90,10 +90,10 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 
 ## P3 — Forums · Aug 19–21 *(orig. Aug 17–19)*
 
-- [ ] Forum-kind channels
-- [ ] Posts with title + tags
-- [ ] Comments reusing the `messages` machinery *(+ the deferred `messages.post_id` FK, **and** the deferred `tasks.source_post_id` → `posts` FK — SPEC §2.3, noted in the P2 migration)*
-- [ ] Tag filtering
+- [x] Forum-kind channels
+- [x] Posts with title + tags
+- [x] Comments reusing the `messages` machinery *(+ the deferred `messages.post_id` FK, **and** the deferred `tasks.source_post_id` → `posts` FK — SPEC §2.3, noted in the P2 migration)*
+- [x] Tag filtering
 - [ ] Create-task-from-post
 
 **GATE G3** — Create a tagged post · comment on it · filter by tag · convert the post to a task.

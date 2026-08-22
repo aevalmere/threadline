@@ -74,11 +74,15 @@ export default function Tasks() {
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
   /**
-   * source_message_id → channel_id for the "from #channel" chips, one batched
-   * read per task-list change. Chip names resolve through the channels
-   * context; a source whose message is gone simply renders no chip.
+   * source_message_id → channel_id and source_post_id → channel_id for the
+   * "from #channel" chips, one batched read each per task-list change. Chip
+   * names resolve through the channels context; a source whose message or
+   * post is gone simply renders no chip.
    */
   const [sourceChannelByMessage, setSourceChannelByMessage] = useState<Map<number, string>>(
+    new Map(),
+  )
+  const [sourceChannelByPost, setSourceChannelByPost] = useState<Map<string, string>>(
     new Map(),
   )
   const sourceIdsKey = useMemo(
@@ -87,6 +91,15 @@ export default function Tasks() {
         .map((t) => t.source_message_id)
         .filter((id): id is number => id !== null)
         .sort((a, b) => a - b)
+        .join(','),
+    [tasks],
+  )
+  const sourcePostIdsKey = useMemo(
+    () =>
+      (tasks ?? [])
+        .map((t) => t.source_post_id)
+        .filter((id): id is string => id !== null)
+        .sort()
         .join(','),
     [tasks],
   )
@@ -114,14 +127,50 @@ export default function Tasks() {
       cancelled = true
     }
   }, [sourceIdsKey])
+  useEffect(() => {
+    if (sourcePostIdsKey === '') {
+      setSourceChannelByPost(new Map())
+      return
+    }
+    let cancelled = false
+    void supabase
+      .from('posts')
+      .select('id,channel_id')
+      .in('id', sourcePostIdsKey.split(','))
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        setSourceChannelByPost(
+          new Map(
+            (data as { id: string; channel_id: string }[]).map((p) => [p.id, p.channel_id]),
+          ),
+        )
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sourcePostIdsKey])
 
   const sourceFor = (task: Task): TaskSource | null => {
-    if (task.source_message_id === null) return null
-    const channelId = sourceChannelByMessage.get(task.source_message_id)
-    if (!channelId) return null
-    const name = channels?.find((c) => c.id === channelId)?.name
-    if (!name) return null
-    return { channelId, channelName: name, messageId: task.source_message_id }
+    if (task.source_message_id !== null) {
+      const channelId = sourceChannelByMessage.get(task.source_message_id)
+      if (!channelId) return null
+      const name = channels?.find((c) => c.id === channelId)?.name
+      if (!name) return null
+      return {
+        kind: 'message',
+        channelId,
+        channelName: name,
+        messageId: task.source_message_id,
+      }
+    }
+    if (task.source_post_id !== null) {
+      const channelId = sourceChannelByPost.get(task.source_post_id)
+      if (!channelId) return null
+      const name = channels?.find((c) => c.id === channelId)?.name
+      if (!name) return null
+      return { kind: 'post', postId: task.source_post_id, forumName: name }
+    }
+    return null
   }
 
   // A click opens the dialog; a drag starts only after 6px of travel, so the
@@ -173,6 +222,7 @@ export default function Tasks() {
       due_date: fields.dueDate,
       position: appendPosition(grouped[fields.status]),
       source_message_id: null,
+      source_post_id: null,
       created_by: authorId,
     })
   }

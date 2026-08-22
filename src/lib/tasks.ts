@@ -50,6 +50,7 @@ export interface TaskInsert {
   due_date: string | null
   position: number
   source_message_id: number | null
+  source_post_id: string | null
   created_by: string
 }
 
@@ -57,6 +58,12 @@ export interface TaskInsert {
 export interface TaskSourceMessage {
   id: number
   body: string
+}
+
+/** The minimal post shape create-task-from-post needs. */
+export interface TaskSourcePost {
+  id: string
+  title: string
 }
 
 /**
@@ -162,6 +169,30 @@ export function taskFromMessagePayload(
     due_date: null,
     position: opts.position,
     source_message_id: message.id,
+    source_post_id: null,
+    created_by: opts.createdBy,
+  }
+}
+
+/**
+ * The create-task-from-post payload — SPEC §1.6's "same flow from a post".
+ * The title seeds from the post's own title verbatim: unlike a message body
+ * it already *is* a title, so `titleFromBody`'s first-line-and-ellipsis
+ * derivation must not touch it.
+ */
+export function taskFromPostPayload(
+  post: TaskSourcePost,
+  opts: { title?: string; position: number; createdBy: string },
+): TaskInsert {
+  return {
+    title: opts.title ?? post.title,
+    description_rich: null,
+    status: 'todo',
+    assignee_id: null,
+    due_date: null,
+    position: opts.position,
+    source_message_id: null,
+    source_post_id: post.id,
     created_by: opts.createdBy,
   }
 }
@@ -177,6 +208,20 @@ export function linkForTask(taskId: string, messageId: number) {
     source_id: taskId,
     target_type: 'message',
     target_id: String(messageId),
+    kind: 'created_from',
+  } as const
+}
+
+/**
+ * The links row for a task created from a post. No coercion here: post ids
+ * are uuids, already the text the polymorphic column stores (SPEC §2.1).
+ */
+export function linkForPost(taskId: string, postId: string) {
+  return {
+    source_type: 'task',
+    source_id: taskId,
+    target_type: 'post',
+    target_id: postId,
     kind: 'created_from',
   } as const
 }

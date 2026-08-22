@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
-import { PencilIcon, Trash2Icon, XIcon } from 'lucide-react'
+import { ListTodoIcon, PencilIcon, Trash2Icon, XIcon } from 'lucide-react'
 
 import { PostDialog } from '@/components/forums/PostDialog'
 import { TagChip } from '@/components/forums/TagChip'
+import { TaskDialog } from '@/components/tasks/TaskDialog'
 import { Composer, type ComposerHandle } from '@/components/messages/Composer'
 import { MessageGroupRow } from '@/components/messages/MessageGroup'
 import { PendingRow } from '@/components/messages/PendingRow'
@@ -27,8 +28,10 @@ import { resolveJump } from '@/lib/jump'
 import { postParent } from '@/lib/messages'
 import { useProfiles } from '@/lib/profiles-context'
 import { plainFromRich } from '@/lib/rich'
+import { titleFromBody } from '@/lib/tasks'
 import { splitThreads, threadRootFor } from '@/lib/threads'
 import { deletePostRecord, updatePostRecord, usePost } from '@/lib/usePosts'
+import { createTaskFromMessage, createTaskFromPost } from '@/lib/useTasks'
 import { useMessages, type Message } from '@/lib/useMessages'
 import { useSignedUrls } from '@/lib/useSignedUrls'
 import { cn } from '@/lib/utils'
@@ -88,13 +91,15 @@ export default function PostView() {
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [openThread, setOpenThread] = useState<number | null>(null)
+  // The two create-task entry points: the post header, and a comment's hover
+  // bar — a comment is an ordinary message, so it uses the message flow.
+  const [taskFromPost, setTaskFromPost] = useState(false)
+  const [taskFromComment, setTaskFromComment] = useState<Message | null>(null)
 
   const actions: MessageActions = {
     onReply: (message) => setOpenThread(threadRootFor(message)),
     onRequestDelete: (message) => setConfirmDelete(message),
-    // Item 7 of the P3 batch wires this to create-task-from-message; a
-    // comment is an ordinary message, so the same dialog will serve.
-    onCreateTask: () => {},
+    onCreateTask: (message) => setTaskFromComment(message),
     deleteAttachment,
     editMessage,
   }
@@ -229,6 +234,15 @@ export default function PostView() {
               {post.title}
             </h1>
             <div className="flex shrink-0 items-center gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                onClick={() => setTaskFromPost(true)}
+              >
+                <ListTodoIcon className="size-4" />
+                <span className="sr-only">Create task from post</span>
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -396,6 +410,48 @@ export default function PostView() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {post && (
+        <TaskDialog
+          open={taskFromPost}
+          title="Create task from post"
+          submitLabel="Create task"
+          initial={{ title: post.title }}
+          onClose={() => setTaskFromPost(false)}
+          onSubmit={async (fields) => {
+            if (authorId === null) throw new Error('Not signed in.')
+            await createTaskFromPost(post, {
+              title: fields.title,
+              status: fields.status,
+              assigneeId: fields.assigneeId,
+              dueDate: fields.dueDate,
+              description: fields.description,
+              createdBy: authorId,
+            })
+          }}
+        />
+      )}
+
+      <TaskDialog
+        open={taskFromComment !== null}
+        title="Create task from message"
+        submitLabel="Create task"
+        initial={taskFromComment ? { title: titleFromBody(taskFromComment.body) } : {}}
+        onClose={() => setTaskFromComment(null)}
+        onSubmit={async (fields) => {
+          // Captured at open-time: plain data, valid even if the page moves on.
+          if (!taskFromComment) return
+          if (authorId === null) throw new Error('Not signed in.')
+          await createTaskFromMessage(taskFromComment, {
+            title: fields.title,
+            status: fields.status,
+            assigneeId: fields.assigneeId,
+            dueDate: fields.dueDate,
+            description: fields.description,
+            createdBy: authorId,
+          })
+        }}
+      />
 
       {post && (
         <PostDialog

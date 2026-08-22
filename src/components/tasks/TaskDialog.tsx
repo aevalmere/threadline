@@ -25,11 +25,9 @@ import { STATUS_LABELS, TASK_STATUSES, type TaskFields } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 
 /** Where a task came from, resolved by the parent for the jump chip. */
-export interface TaskSource {
-  channelId: string
-  channelName: string
-  messageId: number
-}
+export type TaskSource =
+  | { kind: 'message'; channelId: string; channelName: string; messageId: number }
+  | { kind: 'post'; postId: string; forumName: string }
 
 export function TaskDialog({
   open,
@@ -73,15 +71,19 @@ export function TaskDialog({
   )
 }
 
-/** The "from #channel" chip that jumps to a task's source message. */
+/** The "from #channel" chip that jumps to a task's source message or post. */
 export function SourceChip({ source }: { source: TaskSource }) {
   return (
     <Link
-      to={`/channels/${source.channelId}?m=${source.messageId}`}
+      to={
+        source.kind === 'message'
+          ? `/channels/${source.channelId}?m=${source.messageId}`
+          : `/posts/${source.postId}`
+      }
       className="bg-muted text-muted-foreground hover:text-foreground inline-flex max-w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-xs"
       onClick={(e) => e.stopPropagation()}
     >
-      from #{source.channelName}
+      from #{source.kind === 'message' ? source.channelName : source.forumName}
     </Link>
   )
 }

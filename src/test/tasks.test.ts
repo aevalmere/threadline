@@ -7,12 +7,14 @@ import {
   fieldsFromTask,
   groupByStatus,
   isOverdue,
+  linkForPost,
   linkForTask,
   myTasks,
   patchFromFields,
   positionBetween,
   statusPatch,
   taskFromMessagePayload,
+  taskFromPostPayload,
   titleFromBody,
   type Task,
 } from '@/lib/tasks'
@@ -176,6 +178,7 @@ describe('taskFromMessagePayload', () => {
       due_date: null,
       position: 1024,
       source_message_id: 4207,
+      source_post_id: null,
       created_by: ALICE,
     })
     expect(typeof payload.source_message_id).toBe('number')
@@ -191,6 +194,46 @@ describe('taskFromMessagePayload', () => {
   })
 })
 
+// The P3 mirror: create-task-from-post writes the same pair, with the typed
+// uuid FK and a links row targeting the post.
+describe('taskFromPostPayload', () => {
+  const post = { id: 'p0000000-0000-4000-8000-000000000001', title: 'Q4 launch plan' }
+
+  it('builds the tasks insert with source_post_id kept as the uuid', () => {
+    const payload = taskFromPostPayload(post, { position: 1024, createdBy: ALICE })
+    expect(payload).toEqual({
+      title: 'Q4 launch plan',
+      description_rich: null,
+      status: 'todo',
+      assignee_id: null,
+      due_date: null,
+      position: 1024,
+      source_message_id: null,
+      source_post_id: post.id,
+      created_by: ALICE,
+    })
+    expect(typeof payload.source_post_id).toBe('string')
+  })
+
+  it('seeds the title from the post title verbatim — never titleFromBody', () => {
+    // A post title longer than TITLE_MAX must survive untruncated: it already
+    // is a title, and the first-line-plus-ellipsis derivation is for bodies.
+    const long = { id: post.id, title: 'x'.repeat(TITLE_MAX + 20) }
+    expect(taskFromPostPayload(long, { position: 1, createdBy: ALICE }).title).toBe(
+      long.title,
+    )
+  })
+
+  it('an explicit title wins over the seeded one', () => {
+    const payload = taskFromPostPayload(post, {
+      title: 'Ship the launch',
+      position: 1024,
+      createdBy: ALICE,
+    })
+    expect(payload.title).toBe('Ship the launch')
+  })
+})
+
 describe('linkForTask', () => {
   it('builds the created_from edge with the message id as text — DECISIONS #2', () => {
     const link = linkForTask('t-uuid', 4207)
@@ -202,6 +245,19 @@ describe('linkForTask', () => {
       kind: 'created_from',
     })
     expect(typeof link.target_id).toBe('string')
+  })
+})
+
+describe('linkForPost', () => {
+  it('builds the created_from edge with the post uuid passed through as-is', () => {
+    const link = linkForPost('t-uuid', 'p-uuid')
+    expect(link).toEqual({
+      source_type: 'task',
+      source_id: 't-uuid',
+      target_type: 'post',
+      target_id: 'p-uuid',
+      kind: 'created_from',
+    })
   })
 })
 

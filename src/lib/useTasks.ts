@@ -19,11 +19,14 @@ import { supabase } from '@/lib/supabase'
 import {
   TASK_COLUMNS,
   appendPosition,
+  linkForPost,
   linkForTask,
   taskFromMessagePayload,
+  taskFromPostPayload,
   type Task,
   type TaskInsert,
   type TaskSourceMessage,
+  type TaskSourcePost,
   type TaskStatus,
 } from '@/lib/tasks'
 
@@ -168,6 +171,52 @@ export async function createTaskFromMessage(
   const link = await supabase
     .from('links')
     .insert(linkForTask(ins.data.id, message.id))
+    .select('id')
+    .single()
+  if (link.error) {
+    throw new Error(`Task created, but its source link failed: ${link.error.message}`)
+  }
+}
+
+/**
+ * Create-task-from-post — SPEC §1.6's "same flow from a post via
+ * source_post_id". Identical two-write shape to createTaskFromMessage; the
+ * links row targets `post` and carries the uuid as-is.
+ */
+export async function createTaskFromPost(
+  post: TaskSourcePost,
+  opts: {
+    title: string
+    status: TaskStatus
+    assigneeId: string | null
+    dueDate: string | null
+    description: string
+    createdBy: string
+  },
+): Promise<void> {
+  const top = await supabase
+    .from('tasks')
+    .select('position')
+    .eq('status', opts.status)
+    .order('position', { ascending: false })
+    .limit(1)
+  if (top.error) throw new Error(top.error.message)
+  const position = appendPosition((top.data ?? []) as { position: number }[])
+
+  const payload: TaskInsert = {
+    ...taskFromPostPayload(post, { title: opts.title, position, createdBy: opts.createdBy }),
+    status: opts.status,
+    assignee_id: opts.assigneeId,
+    due_date: opts.dueDate,
+    description_rich: richFromPlain(opts.description),
+  }
+
+  const ins = await supabase.from('tasks').insert(payload).select('id').single<{ id: string }>()
+  if (ins.error || !ins.data) throw new Error(ins.error?.message ?? 'Could not create the task.')
+
+  const link = await supabase
+    .from('links')
+    .insert(linkForPost(ins.data.id, post.id))
     .select('id')
     .single()
   if (link.error) {
