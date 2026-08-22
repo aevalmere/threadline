@@ -1,11 +1,14 @@
 import { useRef, useState, type FormEvent } from 'react'
 
+import { DownloadIcon } from 'lucide-react'
+
 import { AuthorAvatar } from '@/components/layout/AuthorAvatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { extensionOf, formatBytes } from '@/lib/attachments'
 import { useAuth } from '@/lib/auth-context'
+import { exportFilename, exportWorkspace } from '@/lib/export'
 import { useProfiles } from '@/lib/profiles-context'
 import { supabase } from '@/lib/supabase'
 import { normalizeDisplayName, normalizeUsername } from '@/lib/username'
@@ -250,6 +253,51 @@ export default function Settings() {
           </p>
         )}
       </form>
+
+      <ExportSection />
+    </div>
+  )
+}
+
+/**
+ * The P6 data-export button — "day-one insurance". Everything except storage
+ * objects, as one downloaded JSON file, straight from the browser: the anon
+ * client with a session can already read every row, so no server piece.
+ */
+function ExportSection() {
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  async function runExport() {
+    setExporting(true)
+    setExportError(null)
+    try {
+      const dump = await exportWorkspace()
+      const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = exportFilename(dump.exported_at)
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Export failed.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2 border-t pt-6">
+      <h2 className="text-sm font-medium">Export</h2>
+      <Button variant="outline" disabled={exporting} onClick={() => void runExport()}>
+        <DownloadIcon /> {exporting ? 'Exporting…' : 'Download workspace data'}
+      </Button>
+      {exportError && (
+        <p role="alert" className="text-destructive text-sm">
+          {exportError}
+        </p>
+      )}
     </div>
   )
 }
