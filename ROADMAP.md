@@ -114,7 +114,7 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 > 5. Hover a **comment** → Create task → the new card's chip jumps back to the exact comment and flashes it.
 > 6. Delete the post (trash icon → confirm). Its comments are gone with it; on the Tasks board both cards survive but their chips are gone (provenance orphaned, tasks kept — SPEC §2.3).
 >
-> **Still open (async), updated 2026-08-22:** ~~the G1 two-browser checklist~~ **clear** · ~~the G2 seven-step checklist~~ **clear** · this G3 checklist · delete the `guest` auth user · confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages · **TEAM BETA — inviting the team stays blocking on Ethan (DECISIONS #21).**
+> **Still open (async), updated 2026-08-22:** ~~the G1 two-browser checklist~~ **clear** · ~~the G2 seven-step checklist~~ **clear** · ~~this G3 checklist~~ **clear — run by Ethan 2026-08-22, no findings** · delete the `guest` auth user · confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages · **TEAM BETA — inviting the team stays blocking on Ethan (DECISIONS #21).**
 
 ---
 
@@ -141,7 +141,7 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 > 5. In a chat channel, hover a message → the new **Copy link** icon (flips to a check). Paste into a doc page — it becomes a link; click it and you land in the channel scrolled to that exact message, flashed.
 > 6. Make a scratch page, drop an image in, then **trash icon → Confirm delete** — you land back at /docs and the page is gone from the list. (Only the creator sees the trash icon; check the second user does not, on a page they did not create.)
 >
-> **Still open (async), updated 2026-08-22:** the G3 six-step checklist · this G4 checklist · delete the `guest` auth user · confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages · **TEAM BETA — inviting the team stays blocking on Ethan (DECISIONS #21).**
+> **Still open (async), updated 2026-08-22:** ~~the G3 six-step checklist~~ **clear** · this G4 checklist · delete the `guest` auth user · confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages · **TEAM BETA — inviting the team stays blocking on Ethan (DECISIONS #21).**
 
 ---
 
@@ -165,7 +165,7 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 > 4. In window A, open a task and set **Assignee** to window B's account → B's bell rings within seconds — "… assigned you a task" — and clicking it opens that task's dialog. (Hidden-tab variant: keep B's tab backgrounded and it arrives as a browser notification.)
 > 5. Mention B in a channel from A → B's bell shows it within seconds (the gate line's second half, re-affirming G1's realtime path).
 >
-> **Still open (async), updated 2026-08-22:** the G3 checklist · the G4 checklist · this G5 checklist · delete the `guest` auth user · confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages · **TEAM BETA — inviting the team stays blocking on Ethan (DECISIONS #21).**
+> **Still open (async), updated 2026-08-22:** ~~the G3 checklist~~ **clear** · the G4 checklist · this G5 checklist · delete the `guest` auth user · confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages · **TEAM BETA — inviting the team stays blocking on Ethan (DECISIONS #21).**
 
 ---
 
