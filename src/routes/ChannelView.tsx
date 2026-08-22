@@ -29,6 +29,7 @@ import { useAuth } from '@/lib/auth-context'
 import { useChannels } from '@/lib/channels-context'
 import { groupMessages } from '@/lib/grouping'
 import { resolveJump } from '@/lib/jump'
+import { channelParent } from '@/lib/messages'
 import { useProfiles } from '@/lib/profiles-context'
 import { titleFromBody } from '@/lib/tasks'
 import { splitThreads, threadRootFor } from '@/lib/threads'
@@ -56,7 +57,7 @@ export default function ChannelView() {
   const { markRead } = useUnread()
   const {
     messages,
-    loadedChannelId,
+    loadedParentId,
     hasMore,
     loadingMore,
     loadOlder,
@@ -71,7 +72,7 @@ export default function ChannelView() {
     deleteAttachment,
     editMessage,
     dismissError,
-  } = useMessages(channelId)
+  } = useMessages(channelId ? channelParent(channelId) : undefined)
 
   const listRef = useRef<HTMLDivElement>(null)
   const composerRef = useRef<ComposerHandle>(null)
@@ -142,7 +143,7 @@ export default function ChannelView() {
   /**
    * Looking at a channel is what marks it read — SPEC §1.4.
    *
-   * Guarded on `loadedChannelId === channelId` for the same reason `resolveJump`
+   * Guarded on `loadedParentId === channelId` for the same reason `resolveJump`
    * is (DECISIONS #17): this component re-renders without remounting on a
    * channel switch, so for one commit `messages` still holds the *previous*
    * channel's rows. Advancing the new channel's pointer with those ids would
@@ -152,10 +153,10 @@ export default function ChannelView() {
    * The write itself is debounced inside the provider (Non-negotiable 8).
    */
   useEffect(() => {
-    if (!channelId || loading || loadedChannelId !== channelId) return
+    if (!channelId || loading || loadedParentId !== channelId) return
     if (messages.length === 0) return
     markRead(channelId, messages)
-  }, [channelId, loadedChannelId, loading, messages, markRead])
+  }, [channelId, loadedParentId, loading, messages, markRead])
 
   /**
    * Keep the reader's place when older messages are prepended.
@@ -216,8 +217,8 @@ export default function ChannelView() {
     const decision = resolveJump({
       jumpTo,
       loading,
-      loadedChannelId,
-      channelId,
+      loadedParentId,
+      parentId: channelId,
       messages,
       hasMore,
     })
@@ -266,7 +267,7 @@ export default function ChannelView() {
       },
       { replace: true },
     )
-  }, [jumpTo, loading, loadedChannelId, channelId, messages, hasMore, loadingMore, loadOlder, setParams])
+  }, [jumpTo, loading, loadedParentId, channelId, messages, hasMore, loadingMore, loadOlder, setParams])
 
   /**
    * Scroll to the flashed message and highlight it briefly.

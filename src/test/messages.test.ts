@@ -2,20 +2,37 @@ import { describe, expect, it } from 'vitest'
 
 import {
   PAGE_SIZE,
+  channelParent,
   hasMorePages,
   highestMessageId,
   mergeMessages,
   oldestMessageId,
   pageQuery,
+  postParent,
   resyncQuery,
+  sameParent,
 } from '@/lib/messages'
 
-const CH = 'channel-1'
+const CH = channelParent('channel-1')
+
+describe('message parents', () => {
+  it('names the column each parent kind filters on', () => {
+    expect(channelParent('c1')).toEqual({ column: 'channel_id', id: 'c1' })
+    expect(postParent('p1')).toEqual({ column: 'post_id', id: 'p1' })
+  })
+
+  it('sameParent requires both column and id to match', () => {
+    expect(sameParent(channelParent('x'), channelParent('x'))).toBe(true)
+    expect(sameParent(channelParent('x'), channelParent('y'))).toBe(false)
+    // The same id string under a different column is a different parent.
+    expect(sameParent(channelParent('x'), postParent('x'))).toBe(false)
+  })
+})
 
 describe('pageQuery', () => {
   it('defaults to 50 per page, newest first, unbounded', () => {
     expect(pageQuery(CH)).toEqual({
-      channelId: CH,
+      parent: CH,
       beforeId: null,
       limit: 50,
       ascending: false,
@@ -30,11 +47,15 @@ describe('pageQuery', () => {
   it('honours an explicit limit', () => {
     expect(pageQuery(CH, null, 10).limit).toBe(10)
   })
+
+  it('carries a post parent unchanged — comments page the same way', () => {
+    expect(pageQuery(postParent('p1')).parent).toEqual({ column: 'post_id', id: 'p1' })
+  })
 })
 
 describe('resyncQuery', () => {
   it('fetches strictly after the newest id held', () => {
-    expect(resyncQuery(CH, 42)).toEqual({ channelId: CH, afterId: 42, ascending: true })
+    expect(resyncQuery(CH, 42)).toEqual({ parent: CH, afterId: 42, ascending: true })
   })
 
   it('fetches from the beginning when nothing is held', () => {

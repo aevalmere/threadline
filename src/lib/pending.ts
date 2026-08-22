@@ -10,17 +10,19 @@
  * Pure, so the reconciliation rules are unit-tested rather than click-tested.
  */
 
+import { sameParent, type MessageParent } from './messages'
+
 export interface PendingMessage {
   /** Client-generated, stable for the life of the entry. */
   key: string
   body: string
   authorId: string
   /**
-   * The channel this was typed into. Entries outlive a channel switch so a
-   * send that fails after the user has navigated away still has a visible
-   * bubble — and a retry — when they come back.
+   * The channel or post this was typed into. Entries outlive a parent switch
+   * so a send that fails after the user has navigated away still has a
+   * visible bubble — and a retry — when they come back.
    */
-  channelId: string
+  parent: MessageParent
   /** Null for a top-level message; the thread's root id for a reply. */
   threadRootId: number | null
   /**
@@ -78,19 +80,20 @@ export function reconcilePending<T extends ConfirmableMessage>(
   return pending.filter((p) => !claimed.has(p.key))
 }
 
-export interface ChannelScopedMessage extends ConfirmableMessage {
+export interface ParentScopedMessage extends ConfirmableMessage {
   channel_id: string | null
+  post_id: string | null
 }
 
 /**
- * Reconcile one channel's pending entries against one channel's rows.
+ * Reconcile one parent's pending entries against one parent's rows.
  *
- * Both sides need the guard. Tagging entries with `channelId` is not enough on
- * its own: message ids come from a single global sequence, so a row loaded in
- * #general can carry the same author and body as an entry still pending in
- * #random *and* a higher id than its `sinceId`, and would claim it. Losing a
- * failed send that way is silent — the bubble, its Retry, and the user's unsent
- * text all vanish.
+ * Both sides need the guard. Tagging entries with their parent is not enough
+ * on its own: message ids come from a single global sequence, so a row loaded
+ * in #general can carry the same author and body as an entry still pending in
+ * #random — or in a forum post — *and* a higher id than its `sinceId`, and
+ * would claim it. Losing a failed send that way is silent — the bubble, its
+ * Retry, and the user's unsent text all vanish.
  *
  * Always returns a fresh array; the caller decides whether the result is worth
  * a re-render.
@@ -100,19 +103,19 @@ export interface ChannelScopedMessage extends ConfirmableMessage {
  * nothing changed and keep the previous state object. If this ever starts
  * rewriting an entry, that shortcut has to go with it.
  */
-export function reconcilePendingForChannel(
+export function reconcilePendingForParent(
   pending: readonly PendingMessage[],
-  messages: readonly ChannelScopedMessage[],
-  channelId: string,
+  messages: readonly ParentScopedMessage[],
+  parent: MessageParent,
 ): PendingMessage[] {
-  const mine = pending.filter((p) => p.channelId === channelId)
+  const mine = pending.filter((p) => sameParent(p.parent, parent))
   if (mine.length === 0) return [...pending]
 
-  const here = messages.filter((m) => m.channel_id === channelId)
+  const here = messages.filter((m) => m[parent.column] === parent.id)
   if (here.length === 0) return [...pending]
 
   const kept = new Set(reconcilePending(mine, here).map((p) => p.key))
-  return pending.filter((p) => p.channelId !== channelId || kept.has(p.key))
+  return pending.filter((p) => !sameParent(p.parent, parent) || kept.has(p.key))
 }
 
 /** Flip one entry's status, leaving the rest untouched. */
@@ -141,10 +144,10 @@ export interface SweepQuery {
 
 /**
  * What to ask the server for when sweeping stuck bubbles — or null if nothing
- * in this channel is waiting.
+ * under this parent is waiting.
  *
  * This is the decision half of the sweep, split out so it is testable: the
- * reconciliation half is `reconcilePendingForChannel`, and between them the
+ * reconciliation half is `reconcilePendingForParent`, and between them the
  * only untested part left is the `await` that joins them.
  *
  * The bound is the **minimum** `sinceId` across everything outstanding, not the
@@ -159,12 +162,12 @@ export interface SweepQuery {
  */
 export function sweepQuery(
   pending: readonly PendingMessage[],
-  channelId: string,
+  parent: MessageParent,
   authorId: string,
 ): SweepQuery | null {
   let afterId = Infinity
   for (const p of pending) {
-    if (p.channelId !== channelId) continue
+    if (!sameParent(p.parent, parent)) continue
     if (p.authorId !== authorId) continue
     if (p.sinceId < afterId) afterId = p.sinceId
   }

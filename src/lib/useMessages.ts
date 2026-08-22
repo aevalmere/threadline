@@ -15,11 +15,13 @@ import {
   oldestMessageId,
   pageQuery,
   resyncQuery,
+  sameParent,
+  type MessageParent,
 } from '@/lib/messages'
 import {
   dropPending,
   markPending,
-  reconcilePendingForChannel,
+  reconcilePendingForParent,
   sweepQuery,
   type PendingMessage,
 } from '@/lib/pending'
@@ -68,34 +70,50 @@ export interface Message {
 }
 
 /**
- * One channel's messages: the first page, a live subscription, and the
- * optimistic send queue.
+ * One parent's messages — a chat channel's stream or a forum post's comments
+ * (SPEC §1.3: one table, keyed by exactly one of channel_id / post_id): the
+ * first page, a live subscription, and the optimistic send queue.
  *
- * A hook rather than a context — message state belongs to whichever channel is
- * open, and only ChannelView consumes it. Channel state is shared and so lives
- * in a context (DECISIONS #6); this does not.
+ * A hook rather than a context — message state belongs to whichever surface is
+ * open, and only one view consumes it at a time. Channel state is shared and
+ * so lives in a context (DECISIONS #6); this does not.
+ *
+ * `opts.storagePrefixId` is the folder uploads land under — the channel id for
+ * chat, and the post's *forum channel* id for comments, so a channel's files
+ * stay removable with one prefix operation either way (see `storagePathFor`).
+ * Defaults to the parent id.
  *
  * All realtime is supabase-js Postgres Changes (Non-negotiable 1). The
- * subscription is torn down whenever the channel changes, because a leaked
- * subscription per channel visit is exactly the free-tier realtime budget
- * Non-negotiable 8 protects.
+ * subscription is torn down whenever the parent changes, because a leaked
+ * subscription per visit is exactly the free-tier realtime budget
+ * Non-negotiable 8 protects. Everything below depends on the parent's two
+ * primitives (`column`, `id`), never on the caller's object identity — a
+ * caller building `channelParent(id)` inline each render must not tear the
+ * subscription down.
  */
-export function useMessages(channelId: string | undefined) {
+export function useMessages(
+  parent: MessageParent | undefined,
+  opts?: { storagePrefixId?: string },
+) {
   const { authorId: userId } = useAuth()
   const { byId: profilesById } = useProfiles()
 
+  const column = parent?.column
+  const parentId = parent?.id
+  const storagePrefixId = opts?.storagePrefixId ?? parentId
+
   const [messages, setMessages] = useState<Message[]>([])
   /**
-   * Which channel the rows in `messages` actually belong to.
+   * Which parent the rows in `messages` actually belong to.
    *
-   * Not the same as `channelId`. `/channels/:channelId` renders the same
+   * Not the same as `parentId`. `/channels/:channelId` renders the same
    * element for every id, so a channel switch re-renders without remounting and
-   * there is a window where `channelId` is already the new channel while
+   * there is a window where `parentId` is already the new parent while
    * `messages` still holds the old one's rows. Anything deciding "is the thing
    * I am looking for absent, or merely not here yet" has to ask this instead —
    * see `resolveJump`.
    */
-  const [loadedChannelId, setLoadedChannelId] = useState<string | undefined>()
+  const [loadedParentId, setLoadedParentId] = useState<string | undefined>()
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [pending, setPending] = useState<PendingMessage[]>([])
   const [loading, setLoading] = useState(true)
@@ -118,16 +136,16 @@ export function useMessages(channelId: string | undefined) {
   // would rebuild resync — and re-run the effects that hold it — on every send.
   const pendingRef = useRef<PendingMessage[]>([])
   pendingRef.current = pending
-  // Whether this channel's first page has landed — the real precondition for
+  // Whether this parent's first page has landed — the real precondition for
   // draining forward. Read inside `resync` without becoming a dependency.
-  const loadedChannelIdRef = useRef<string | undefined>(undefined)
-  loadedChannelIdRef.current = loadedChannelId
+  const loadedParentIdRef = useRef<string | undefined>(undefined)
+  loadedParentIdRef.current = loadedParentId
 
   /**
-   * Bumped whenever the open channel changes. `/channels/:channelId` renders
+   * Bumped whenever the open parent changes. `/channels/:channelId` renders
    * the same element for every id, so a param change re-runs the effect
    * *without* remounting — this hook instance and its closures survive. Any
-   * await that spans a channel switch checks this before touching state.
+   * await that spans a parent switch checks this before touching state.
    */
   const epochRef = useRef(0)
 
@@ -155,19 +173,19 @@ export function useMessages(channelId: string | undefined) {
    * reconcilePending's one-to-one guarantee and silently swallowed the second
    * of two identical in-flight messages.
    *
-   * Scoping is on both sides — see `reconcilePendingForChannel`. This effect
-   * re-runs the instant `channelId` changes, while `messages` still holds the
-   * *previous* channel's rows (the clear below cannot retroactively change the
+   * Scoping is on both sides — see `reconcilePendingForParent`. This effect
+   * re-runs the instant the parent changes, while `messages` still holds the
+   * *previous* parent's rows (the clear below cannot retroactively change the
    * value this closure captured), so filtering the rows is not belt-and-braces:
    * it is the only thing standing between a failed send and silent deletion.
    */
   useEffect(() => {
-    if (!channelId) return
+    if (!column || !parentId) return
     setPending((current) => {
-      const next = reconcilePendingForChannel(current, messages, channelId)
+      const next = reconcilePendingForParent(current, messages, { column, id: parentId })
       return next.length === current.length ? current : next
     })
-  }, [messages, channelId])
+  }, [messages, column, parentId])
 
   /**
    * True once this channel's subscription has reached SUBSCRIBED at least
@@ -211,7 +229,7 @@ export function useMessages(channelId: string | undefined) {
    */
   const loadOlder = useCallback(async (): Promise<'loaded' | 'empty' | 'busy'> => {
     if (loadingMoreRef.current) return 'busy'
-    if (!channelId) return 'empty'
+    if (!column || !parentId) return 'empty'
     const before = oldestMessageId(messagesRef.current)
     // Nothing held yet means the first page is still in flight; it will set
     // the cursor this needs.
@@ -221,21 +239,20 @@ export function useMessages(channelId: string | undefined) {
     setLoadingMore(true)
     const epoch = epochRef.current
 
-    const q = pageQuery(channelId, before)
+    const q = pageQuery({ column, id: parentId }, before)
     const { data, error: err } = await supabase
       .from('messages')
       .select(MESSAGE_COLUMNS)
-      .eq('channel_id', q.channelId)
+      .eq(q.parent.column, q.parent.id)
       .lt('id', q.beforeId!)
       .order('id', { ascending: q.ascending })
       .limit(q.limit)
 
-    // A page that arrives after a channel switch belongs to the channel that
+    // A page that arrives after a parent switch belongs to the parent that
     // asked for it, not the one now on screen. Checked *before* clearing the
-    // in-flight flag, which the new channel's own load now owns.
-    // A page that arrives after a channel switch is the *previous* channel's;
-    // `busy` rather than `empty` so the caller leaves the new channel's anchor
-    // alone — this call no longer owns anything.
+    // in-flight flag, which the new parent's own load now owns — `busy` rather
+    // than `empty` so the caller leaves the new parent's anchor alone; this
+    // call no longer owns anything.
     if (epochRef.current !== epoch) return 'busy'
     loadingMoreRef.current = false
     setLoadingMore(false)
@@ -260,7 +277,7 @@ export function useMessages(channelId: string | undefined) {
       })
 
     return 'loaded'
-  }, [channelId, absorb, absorbAttachments])
+  }, [column, parentId, absorb, absorbAttachments])
 
   /**
    * Cancel a stuck "sending" bubble whose row actually landed.
@@ -279,15 +296,15 @@ export function useMessages(channelId: string | undefined) {
    * has scrolled off, and reads a short window rather than the whole history.
    */
   const sweepPending = useCallback(async () => {
-    if (!channelId || !userId) return
-    const ask = sweepQuery(pendingRef.current, channelId, userId)
+    if (!column || !parentId || !userId) return
+    const ask = sweepQuery(pendingRef.current, { column, id: parentId }, userId)
     if (!ask) return
 
     const epoch = epochRef.current
     const { data: mine } = await supabase
       .from('messages')
       .select(MESSAGE_COLUMNS)
-      .eq('channel_id', channelId)
+      .eq(column, parentId)
       .eq('author_id', ask.authorId)
       .gt('id', ask.afterId)
       .order('id', { ascending: true })
@@ -295,10 +312,13 @@ export function useMessages(channelId: string | undefined) {
     if (!mine || epochRef.current !== epoch) return
 
     setPending((current) => {
-      const next = reconcilePendingForChannel(current, mine as Message[], channelId)
+      const next = reconcilePendingForParent(current, mine as Message[], {
+        column,
+        id: parentId,
+      })
       return next.length === current.length ? current : next
     })
-  }, [channelId, userId])
+  }, [column, parentId, userId])
 
   /**
    * Everything missed while disconnected — SPEC §1.5.
@@ -323,7 +343,7 @@ export function useMessages(channelId: string | undefined) {
    * read pointer, neither of which moves backwards.
    */
   const resync = useCallback(async () => {
-    if (!channelId || resyncing.current) return
+    if (!column || !parentId || resyncing.current) return
     // A laptop wake can fire `online`, `visibilitychange` and a reconnect
     // `SUBSCRIBED` within the same second. `mergeMessages` would dedupe the
     // results, but each pass now costs up to ten round trips, so they are
@@ -338,22 +358,22 @@ export function useMessages(channelId: string | undefined) {
     // with no error surfaced, until the user happened to switch channels.
     // `UnreadProvider.refresh` already guards the identical latch this way.
     try {
-      // Drain only once this channel's first page has landed. Until then the
-      // cursor is 0 and walking forward would pull the channel's *oldest* rows,
+      // Drain only once this parent's first page has landed. Until then the
+      // cursor is 0 and walking forward would pull the parent's *oldest* rows,
       // then merge the newest page on top — the mid-list hole this loop exists
-      // to avoid. Keyed on `loadedChannelId`, not on the cursor being 0: a
+      // to avoid. Keyed on `loadedParentId`, not on the cursor being 0: a
       // channel that is legitimately empty also has cursor 0, and it still
       // needs reconnect to fetch what arrived while the socket was down. That
       // case is exactly G1's "network killed 30s then restored".
-      if (loadedChannelIdRef.current !== channelId) return
+      if (loadedParentIdRef.current !== parentId) return
 
       let cursor = highestMessageId(messagesRef.current)
       for (let page = 0; page < MAX_RESYNC_PAGES; page += 1) {
-        const q = resyncQuery(channelId, cursor)
+        const q = resyncQuery({ column, id: parentId }, cursor)
         const { data, error: err } = await supabase
           .from('messages')
           .select(MESSAGE_COLUMNS)
-          .eq('channel_id', q.channelId)
+          .eq(q.parent.column, q.parent.id)
           .gt('id', q.afterId)
           .order('id', { ascending: q.ascending })
           .limit(RESYNC_LIMIT)
@@ -386,11 +406,12 @@ export function useMessages(channelId: string | undefined) {
     } finally {
       resyncing.current = false
     }
-  }, [channelId, absorb, absorbAttachments, sweepPending])
+  }, [column, parentId, absorb, absorbAttachments, sweepPending])
 
-  // Load the first page, then subscribe. Re-runs on channel change.
+  // Load the first page, then subscribe. Re-runs on parent change. Depends on
+  // the parent's primitives, never the object — see the hook comment.
   useEffect(() => {
-    if (!channelId) return
+    if (!column || !parentId) return
 
     epochRef.current += 1
     joined.current = false
@@ -402,14 +423,14 @@ export function useMessages(channelId: string | undefined) {
     setLoading(true)
     setError(null)
     setMessages([])
-    setLoadedChannelId(undefined)
+    setLoadedParentId(undefined)
     setAttachments([])
 
-    const q = pageQuery(channelId)
+    const q = pageQuery({ column, id: parentId })
     let query = supabase
       .from('messages')
       .select(MESSAGE_COLUMNS)
-      .eq('channel_id', q.channelId)
+      .eq(q.parent.column, q.parent.id)
       .order('id', { ascending: q.ascending })
       .limit(q.limit)
     if (q.beforeId !== null) query = query.lt('id', q.beforeId)
@@ -429,7 +450,7 @@ export function useMessages(channelId: string | undefined) {
       const rows = (data ?? []) as Message[]
       absorb(rows)
       setHasMore(hasMorePages(rows.length, q.limit))
-      setLoadedChannelId(channelId)
+      setLoadedParentId(parentId)
       setLoading(false)
 
       // Cancel any bubble whose row landed while we were away. This is the
@@ -456,22 +477,22 @@ export function useMessages(channelId: string | undefined) {
     })
 
     const channel = supabase
-      .channel(`messages:${channelId}`)
+      .channel(`messages:${column}:${parentId}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'messages',
-          filter: `channel_id=eq.${channelId}`,
+          filter: `${column}=eq.${parentId}`,
         },
         (payload) => {
           if (!active) return
           if (payload.eventType === 'DELETE') {
             // Belt and braces. The product's delete is soft (an UPDATE setting
             // deleted_at), and with the default replica identity a DELETE
-            // payload carries only the primary key — which the channel_id
-            // filter above cannot match — so this branch may never fire.
+            // payload carries only the primary key — which the parent filter
+            // above cannot match — so this branch may never fire.
             const gone = (payload.old as { id?: number }).id
             if (typeof gone === 'number') {
               setMessages((current) => current.filter((m) => m.id !== gone))
@@ -515,7 +536,7 @@ export function useMessages(channelId: string | undefined) {
       active = false
       void supabase.removeChannel(channel)
     }
-  }, [channelId, absorb, absorbAttachments, resync, sweepPending])
+  }, [column, parentId, absorb, absorbAttachments, resync, sweepPending])
 
   /**
    * Also resync when the browser says the network is back, and when the tab is
@@ -528,7 +549,7 @@ export function useMessages(channelId: string | undefined) {
    * that returns nothing when nothing was missed, so an extra call is cheap.
    */
   useEffect(() => {
-    if (!channelId) return
+    if (!parentId) return
 
     const onWake = () => {
       if (document.visibilityState === 'visible') void resync()
@@ -539,7 +560,7 @@ export function useMessages(channelId: string | undefined) {
       window.removeEventListener('online', onWake)
       document.removeEventListener('visibilitychange', onWake)
     }
-  }, [channelId, resync])
+  }, [parentId, resync])
 
   /**
    * Write the bell rows for a message that just landed — SPEC §1.9.
@@ -621,7 +642,8 @@ export function useMessages(channelId: string | undefined) {
     async (rawBody: string, threadRootId: number | null = null, files: File[] = []) => {
       const body = rawBody.trim()
       // Files alone are a valid message; `body text not null` accepts ''.
-      if ((!body && files.length === 0) || !channelId || !userId) return
+      if ((!body && files.length === 0) || !column || !parentId || !storagePrefixId || !userId)
+        return
 
       for (const file of files) {
         const check = validateFile(file)
@@ -636,7 +658,7 @@ export function useMessages(channelId: string | undefined) {
         key: crypto.randomUUID(),
         body,
         authorId: userId,
-        channelId,
+        parent: { column, id: parentId },
         threadRootId,
         sinceId: highestMessageId(messagesRef.current),
         status: 'sending',
@@ -649,7 +671,7 @@ export function useMessages(channelId: string | undefined) {
       // attachments that do not exist.
       const uploaded: { path: string; file: File }[] = []
       for (const file of files) {
-        const path = storagePathFor(channelId, file.name, crypto.randomUUID())
+        const path = storagePathFor(storagePrefixId, file.name, crypto.randomUUID())
         const { error: upErr } = await supabase.storage
           .from(BUCKET)
           .upload(path, file, { contentType: file.type || undefined })
@@ -669,7 +691,7 @@ export function useMessages(channelId: string | undefined) {
       const { data, error: err } = await supabase
         .from('messages')
         .insert({
-          channel_id: channelId,
+          [column]: parentId,
           author_id: userId,
           body,
           thread_root_id: threadRootId,
@@ -678,7 +700,7 @@ export function useMessages(channelId: string | undefined) {
         .single()
 
       if (err) {
-        // Marked regardless of epoch: the entry is tagged with its channel, so
+        // Marked regardless of epoch: the entry is tagged with its parent, so
         // the failed bubble and its Retry are waiting when the user returns.
         setPending((p) => markPending(p, entry.key, 'failed'))
         if (uploaded.length > 0) {
@@ -718,12 +740,12 @@ export function useMessages(channelId: string | undefined) {
       // here must not make a sent message look unsent.
       void notify(message, threadRootId)
 
-      // A *successful* row must not be merged into whatever channel is open
+      // A *successful* row must not be merged into whatever parent is open
       // now — that would render a #general message inside #random.
       if (epochRef.current !== epoch) return
       absorb([message])
     },
-    [channelId, userId, absorb, absorbAttachments, notify],
+    [column, parentId, storagePrefixId, userId, absorb, absorbAttachments, notify],
   )
 
   /**
@@ -860,8 +882,11 @@ export function useMessages(channelId: string | undefined) {
   }, [])
 
   const visiblePending = useMemo(
-    () => pending.filter((p) => p.channelId === channelId),
-    [pending, channelId],
+    () =>
+      column && parentId
+        ? pending.filter((p) => sameParent(p.parent, { column, id: parentId }))
+        : [],
+    [pending, column, parentId],
   )
 
   // Keyed by message id as text, because attachments.owner_id is text (§2.1).
@@ -872,7 +897,7 @@ export function useMessages(channelId: string | undefined) {
 
   return {
     messages,
-    loadedChannelId,
+    loadedParentId,
     hasMore,
     loadingMore,
     loadOlder,

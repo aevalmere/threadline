@@ -10,8 +10,9 @@
  * before the target could possibly exist, and the jump would silently never
  * happen — which is exactly the bug this function exists to make testable.
  *
- * Hence `loadedChannelId`: the channel whose page is actually in `messages`.
- * Until that matches, the answer is `wait` and the parameter must survive.
+ * Hence `loadedParentId`: the channel — or, since P3, the forum post — whose
+ * page is actually in `messages`. Until that matches the routed parent, the
+ * answer is `wait` and the parameter must survive.
  */
 
 export interface JumpCandidate {
@@ -42,21 +43,21 @@ export type JumpDecision =
 export function resolveJump(input: {
   jumpTo: string | null
   loading: boolean
-  /** The channel the rows in `messages` belong to. */
-  loadedChannelId: string | undefined
-  /** The channel currently routed to. */
-  channelId: string | undefined
+  /** The parent (channel or post) the rows in `messages` belong to. */
+  loadedParentId: string | undefined
+  /** The parent currently routed to. */
+  parentId: string | undefined
   messages: readonly JumpCandidate[]
   /** Whether older pages exist beyond the loaded ones — gates `page`. */
   hasMore: boolean
 }): JumpDecision {
-  const { jumpTo, loading, loadedChannelId, channelId, messages, hasMore } = input
+  const { jumpTo, loading, loadedParentId, parentId, messages, hasMore } = input
 
   if (!jumpTo) return { status: 'idle' }
 
-  // The page in hand must be this channel's, and settled. Either half being
+  // The page in hand must be this parent's, and settled. Either half being
   // wrong means the target has not had its chance to appear.
-  if (loading || !channelId || loadedChannelId !== channelId) return { status: 'wait' }
+  if (loading || !parentId || loadedParentId !== parentId) return { status: 'wait' }
 
   const id = Number(jumpTo)
   if (!Number.isInteger(id)) return { status: 'miss' }

@@ -12,8 +12,32 @@
 
 export const PAGE_SIZE = 50
 
+/**
+ * What a message stream hangs off — a chat channel or a forum post. One of
+ * `messages`' two parent columns plus the parent's id (SPEC §1.3: exactly one
+ * is set per row, CHECK-enforced). Carrying the *column name* rather than a
+ * kind keeps every query site to one `.eq(parent.column, parent.id)` with no
+ * mapping step to get wrong.
+ */
+export interface MessageParent {
+  column: 'channel_id' | 'post_id'
+  id: string
+}
+
+export function channelParent(id: string): MessageParent {
+  return { column: 'channel_id', id }
+}
+
+export function postParent(id: string): MessageParent {
+  return { column: 'post_id', id }
+}
+
+export function sameParent(a: MessageParent, b: MessageParent): boolean {
+  return a.column === b.column && a.id === b.id
+}
+
 export interface PageQuery {
-  channelId: string
+  parent: MessageParent
   /** Exclusive upper bound — the oldest id already held. Null on first page. */
   beforeId: number | null
   limit: number
@@ -26,15 +50,15 @@ export interface PageQuery {
  * scroll passes the oldest id it currently holds.
  */
 export function pageQuery(
-  channelId: string,
+  parent: MessageParent,
   beforeId: number | null = null,
   limit: number = PAGE_SIZE,
 ): PageQuery {
-  return { channelId, beforeId, limit, ascending: false }
+  return { parent, beforeId, limit, ascending: false }
 }
 
 export interface ResyncQuery {
-  channelId: string
+  parent: MessageParent
   /** Exclusive lower bound — the newest id already held. */
   afterId: number
   ascending: true
@@ -44,8 +68,8 @@ export interface ResyncQuery {
  * Everything missed while disconnected. Runs on every channel join and every
  * reconnect, so a dropped websocket event is never data loss.
  */
-export function resyncQuery(channelId: string, afterId: number | null): ResyncQuery {
-  return { channelId, afterId: afterId ?? 0, ascending: true }
+export function resyncQuery(parent: MessageParent, afterId: number | null): ResyncQuery {
+  return { parent, afterId: afterId ?? 0, ascending: true }
 }
 
 export interface IdentifiedMessage {

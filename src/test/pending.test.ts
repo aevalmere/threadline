@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
+import { channelParent, postParent } from '@/lib/messages'
 import {
   dropPending,
   markPending,
   reconcilePending,
-  reconcilePendingForChannel,
+  reconcilePendingForParent,
   sweepQuery,
   type PendingMessage,
 } from '@/lib/pending'
@@ -20,7 +21,15 @@ function pending(
   channelId = 'channel-uuid',
   threadRootId: number | null = null,
 ): PendingMessage {
-  return { key, body, authorId, channelId, threadRootId, sinceId, status: 'sending' }
+  return {
+    key,
+    body,
+    authorId,
+    parent: channelParent(channelId),
+    threadRootId,
+    sinceId,
+    status: 'sending',
+  }
 }
 
 function confirmed(
@@ -114,17 +123,24 @@ describe('reconcilePending', () => {
   })
 })
 
-describe('reconcilePendingForChannel', () => {
+describe('reconcilePendingForParent', () => {
   const RANDOM = 'channel-random'
   const GENERAL = 'channel-general'
+  const POST = 'post-uuid'
 
   function row(id: number, body: string, channel_id: string, author_id = ALICE) {
-    return { id, body, channel_id, author_id, thread_root_id: null }
+    return { id, body, channel_id, post_id: null, author_id, thread_root_id: null }
+  }
+
+  function commentRow(id: number, body: string, post_id: string, author_id = ALICE) {
+    return { id, body, channel_id: null, post_id, author_id, thread_root_id: null }
   }
 
   it('drops an entry confirmed by a row in the same channel', () => {
     const p = [pending('k1', 'ok', ALICE, 100, RANDOM)]
-    expect(reconcilePendingForChannel(p, [row(101, 'ok', RANDOM)], RANDOM)).toEqual([])
+    expect(
+      reconcilePendingForParent(p, [row(101, 'ok', RANDOM)], channelParent(RANDOM)),
+    ).toEqual([])
   })
 
   it('does NOT let another channel’s identical message claim the entry', () => {
@@ -132,12 +148,14 @@ describe('reconcilePendingForChannel', () => {
     // a later #general message can outrank a #random entry's sinceId.
     const p = [pending('k1', 'ok', ALICE, 100, RANDOM)]
     const generalRows = [row(500, 'ok', GENERAL)]
-    expect(reconcilePendingForChannel(p, generalRows, RANDOM)).toEqual(p)
+    expect(reconcilePendingForParent(p, generalRows, channelParent(RANDOM))).toEqual(p)
   })
 
   it('is a no-op while the loaded rows still belong to the previous channel', () => {
     const p = [pending('k1', 'thanks', ALICE, 1, RANDOM)]
-    expect(reconcilePendingForChannel(p, [row(9, 'thanks', GENERAL)], RANDOM)).toEqual(p)
+    expect(
+      reconcilePendingForParent(p, [row(9, 'thanks', GENERAL)], channelParent(RANDOM)),
+    ).toEqual(p)
   })
 
   it('leaves other channels’ entries untouched while reconciling this one', () => {
@@ -145,27 +163,36 @@ describe('reconcilePendingForChannel', () => {
       pending('k-random', 'ok', ALICE, 100, RANDOM),
       pending('k-general', 'ok', ALICE, 100, GENERAL),
     ]
-    const left = reconcilePendingForChannel(p, [row(101, 'ok', RANDOM)], RANDOM)
+    const left = reconcilePendingForParent(p, [row(101, 'ok', RANDOM)], channelParent(RANDOM))
     expect(left.map((x) => x.key)).toEqual(['k-general'])
   })
 
   it('ignores rows from a channel nobody is pending in', () => {
     const p = [pending('k1', 'ok', ALICE, 100, RANDOM)]
     const mixed = [row(101, 'ok', GENERAL), row(102, 'ok', RANDOM)]
-    expect(reconcilePendingForChannel(p, mixed, RANDOM)).toEqual([])
+    expect(reconcilePendingForParent(p, mixed, channelParent(RANDOM))).toEqual([])
   })
 
   it('returns everything when nothing is pending for this channel', () => {
     const p = [pending('k1', 'ok', ALICE, 100, GENERAL)]
-    expect(reconcilePendingForChannel(p, [row(101, 'ok', RANDOM)], RANDOM)).toEqual(p)
+    expect(
+      reconcilePendingForParent(p, [row(101, 'ok', RANDOM)], channelParent(RANDOM)),
+    ).toEqual(p)
   })
 
   it('tolerates a null channel_id without matching it', () => {
     const p = [pending('k1', 'ok', ALICE, 100, RANDOM)]
     const orphan = [
-      { id: 101, body: 'ok', channel_id: null, author_id: ALICE, thread_root_id: null },
+      {
+        id: 101,
+        body: 'ok',
+        channel_id: null,
+        post_id: null,
+        author_id: ALICE,
+        thread_root_id: null,
+      },
     ]
-    expect(reconcilePendingForChannel(p, orphan, RANDOM)).toEqual(p)
+    expect(reconcilePendingForParent(p, orphan, channelParent(RANDOM))).toEqual(p)
   })
 
   it('preserves order across channels', () => {
@@ -174,8 +201,34 @@ describe('reconcilePendingForChannel', () => {
       pending('k2', 'b', ALICE, 100, RANDOM),
       pending('k3', 'c', ALICE, 100, GENERAL),
     ]
-    const left = reconcilePendingForChannel(p, [row(101, 'b', RANDOM)], RANDOM)
+    const left = reconcilePendingForParent(p, [row(101, 'b', RANDOM)], channelParent(RANDOM))
     expect(left.map((x) => x.key)).toEqual(['k1', 'k3'])
+  })
+
+  // The P3 half of the same coin: comments are messages keyed by post_id
+  // (SPEC §1.3), and the reconciler must scope on whichever column the parent
+  // names — not assume channel_id.
+  it('drops a comment entry confirmed by a row under the same post', () => {
+    const p: PendingMessage[] = [
+      { ...pending('k1', 'ok', ALICE, 100), parent: postParent(POST) },
+    ]
+    expect(
+      reconcilePendingForParent(p, [commentRow(101, 'ok', POST)], postParent(POST)),
+    ).toEqual([])
+  })
+
+  it('does NOT let a channel row claim a comment entry, or vice versa', () => {
+    const p: PendingMessage[] = [
+      { ...pending('k1', 'ok', ALICE, 100), parent: postParent(POST) },
+    ]
+    expect(
+      reconcilePendingForParent(p, [row(500, 'ok', RANDOM)], postParent(POST)),
+    ).toEqual(p)
+
+    const q = [pending('k2', 'ok', ALICE, 100, RANDOM)]
+    expect(
+      reconcilePendingForParent(q, [commentRow(500, 'ok', POST)], channelParent(RANDOM)),
+    ).toEqual(q)
   })
 })
 
@@ -206,18 +259,18 @@ describe('dropPending', () => {
  * A send that succeeds *after* you leave a channel keeps its bubble, and on
  * return the newest-50 page may not contain the confirming row, so the ordinary
  * reconcile never sees it. The sweep asks a narrower question instead. These
- * pin *what it asks*; `reconcilePendingForChannel` above pins what it does with
+ * pin *what it asks*; `reconcilePendingForParent` above pins what it does with
  * the answer. Deleting either half fails this file.
  */
 describe('sweepQuery', () => {
   const ME = 'user-me'
-  const CH = 'channel-a'
+  const CH = channelParent('channel-a')
 
   const entry = (over: Partial<PendingMessage> = {}): PendingMessage => ({
     key: 'k1',
     body: 'did this send?',
     authorId: ME,
-    channelId: CH,
+    parent: CH,
     threadRootId: null,
     sinceId: 100,
     status: 'sending',
@@ -243,15 +296,20 @@ describe('sweepQuery', () => {
     expect(out).toEqual({ authorId: ME, afterId: 100 })
   })
 
-  it('ignores another channel’s outstanding sends', () => {
-    expect(sweepQuery([entry({ channelId: 'channel-b' })], CH, ME)).toBeNull()
+  it('ignores another parent’s outstanding sends', () => {
+    expect(sweepQuery([entry({ parent: channelParent('channel-b') })], CH, ME)).toBeNull()
     // …including when computing the bound.
     const out = sweepQuery(
-      [entry({ key: 'a', channelId: 'channel-b', sinceId: 1 }), entry({ key: 'b' })],
+      [
+        entry({ key: 'a', parent: channelParent('channel-b'), sinceId: 1 }),
+        entry({ key: 'b' }),
+      ],
       CH,
       ME,
     )
     expect(out).toEqual({ authorId: ME, afterId: 100 })
+    // A post parent with the same id string is still a different parent.
+    expect(sweepQuery([entry({ parent: postParent('channel-a') })], CH, ME)).toBeNull()
   })
 
   it('includes failed entries — a send can error after its row landed', () => {
