@@ -10,6 +10,8 @@
  * here are the one place that conversion is allowed to happen.
  */
 
+import { plainFromRich, richFromPlain } from './rich'
+
 export const TASK_STATUSES = ['todo', 'doing', 'done'] as const
 export type TaskStatus = (typeof TASK_STATUSES)[number]
 
@@ -236,30 +238,3 @@ export function patchFromFields(
   }
 }
 
-/**
- * Minimal BlockNote-shaped paragraphs from plain text, and back. P2's modal
- * is a plain textarea; P4's BlockNote editor loads this same column without a
- * migration (SPEC §2.3). One block per line, empty lines preserved as empty
- * paragraphs.
- */
-export interface RichParagraph {
-  type: 'paragraph'
-  content: { type: 'text'; text: string; styles: Record<string, never> }[]
-}
-
-export function richFromPlain(text: string): RichParagraph[] | null {
-  if (text.trim() === '') return null
-  return text.split('\n').map((line) => ({
-    type: 'paragraph',
-    content: line === '' ? [] : [{ type: 'text', text: line, styles: {} }],
-  }))
-}
-
-export function plainFromRich(rich: unknown): string {
-  if (!Array.isArray(rich)) return ''
-  return rich
-    .map((block: { content?: { text?: string }[] }) =>
-      Array.isArray(block?.content) ? block.content.map((c) => c?.text ?? '').join('') : '',
-    )
-    .join('\n')
-}

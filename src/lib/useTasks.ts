@@ -14,12 +14,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { richFromPlain } from '@/lib/rich'
 import { supabase } from '@/lib/supabase'
 import {
   TASK_COLUMNS,
   appendPosition,
   linkForTask,
-  richFromPlain,
   taskFromMessagePayload,
   type Task,
   type TaskInsert,

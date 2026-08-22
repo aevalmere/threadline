@@ -33,6 +33,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/lib/auth-context'
 import { useChannels } from '@/lib/channels-context'
 import { useProfiles } from '@/lib/profiles-context'
+import { richFromPlain } from '@/lib/rich'
 import { supabase } from '@/lib/supabase'
 import {
   STATUS_LABELS,
@@ -44,7 +45,6 @@ import {
   myTasks,
   patchFromFields,
   positionBetween,
-  richFromPlain,
   statusPatch,
   type Task,
   type TaskFields,

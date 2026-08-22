@@ -40,8 +40,9 @@
  * resolve and every profile renders as a teammate the app cannot name.
  * v4 added the `notifications` table for the bell.
  * v5 added the `tasks` and `links` tables for the P2 kanban.
+ * v6 added `posts`/`tags`/`post_tags` and a forum-kind channel for P3.
  */
-const STORAGE_KEY = 'threadline.mock.v5'
+const STORAGE_KEY = 'threadline.mock.v6'
 
 type Row = Record<string, unknown>
 type Tables = Record<string, Row[]>
@@ -75,6 +76,7 @@ const TEAMMATE_B_ID = '00000000-0000-4000-8000-000000000003'
 function seed(): Tables {
   const general = '10000000-0000-4000-8000-000000000001'
   const random = '10000000-0000-4000-8000-000000000002'
+  const ideas = '10000000-0000-4000-8000-000000000003'
   const now = new Date().toISOString()
   return {
     profiles: [
@@ -117,6 +119,16 @@ function seed(): Tables {
         created_by: MOCK_USER_ID,
         created_at: now,
       },
+      // A forum so /forums has something to render offline — the post list,
+      // tag filter, and comment surfaces are all unreachable without one.
+      {
+        id: ideas,
+        name: 'ideas',
+        kind: 'forum',
+        topic: 'Pitches and proposals',
+        created_by: MOCK_USER_ID,
+        created_at: now,
+      },
     ],
     channel_members: [
       { channel_id: general, user_id: MOCK_USER_ID, last_read_message_id: null, joined_at: now },
@@ -127,6 +139,9 @@ function seed(): Tables {
     notifications: [],
     tasks: [],
     links: [],
+    posts: [],
+    tags: [],
+    post_tags: [],
   }
 }
 
@@ -184,7 +199,10 @@ const COLUMN_DEFAULTS: Record<string, Row> = {
     created_by: null,
     completed_at: null,
   },
-  // `links` has no nullable payload columns (SPEC §2.3) — nothing to default.
+  posts: { body_rich: null },
+  tags: { color: null },
+  // `links` and `post_tags` have no nullable payload columns (SPEC §2.3) —
+  // nothing to default.
 }
 
 /**
@@ -193,8 +211,10 @@ const COLUMN_DEFAULTS: Record<string, Row> = {
  * be the mock inventing a shape Postgres cannot produce — the same class of
  * problem as the missing nullable columns above.
  */
-const COMPOSITE_PK: Record<string, { timestamp: string }> = {
+const COMPOSITE_PK: Record<string, { timestamp?: string }> = {
   channel_members: { timestamp: 'joined_at' },
+  // post_tags has no timestamp at all (SPEC §2.3) — just the two-column PK.
+  post_tags: {},
 }
 
 /** messages.id is a bigint identity; everything else is a uuid. */
@@ -337,11 +357,37 @@ class Query implements PromiseLike<{ data: unknown; error: null | { message: str
             return { data: null, error: { message: 'duplicate key value', code: '23505' } }
           }
         }
+        // Approximates the unique index on tags.name, same reasoning — the
+        // tag-creation race path in ensureTags is only exercisable offline if
+        // the duplicate actually errors.
+        if (this.table === 'tags') {
+          if (db.tags.some((t) => t.name === row.name)) {
+            return { data: null, error: { message: 'duplicate key value', code: '23505' } }
+          }
+        }
+        const composite = COMPOSITE_PK[this.table]
         const created: Row = {
-          id: nextId(this.table),
-          created_at: new Date().toISOString(),
+          ...(composite
+            ? composite.timestamp
+              ? { [composite.timestamp]: new Date().toISOString() }
+              : {}
+            : { id: nextId(this.table), created_at: new Date().toISOString() }),
           ...(COLUMN_DEFAULTS[this.table] ?? {}),
           ...row,
+        }
+        // The messages_one_parent CHECK: exactly one of channel_id / post_id
+        // (SPEC §1.3). Reproduced because a mock row wearing both parents —
+        // or neither — is a state Postgres cannot produce, and every consumer
+        // (unread counts, channel filters, comment counts) relies on the two
+        // sets being disjoint.
+        if (
+          this.table === 'messages' &&
+          (created.channel_id == null) === (created.post_id == null)
+        ) {
+          return {
+            data: null,
+            error: { message: 'messages_one_parent check violation', code: '23514' },
+          }
         }
         // Threads are one level deep — the flatten_thread_root trigger's job
         // (SPEC §1.3), reproduced so the mock cannot fake a nested thread.
@@ -377,7 +423,9 @@ class Query implements PromiseLike<{ data: unknown; error: null | { message: str
           const composite = COMPOSITE_PK[this.table]
           const created: Row = {
             ...(composite
-              ? { [composite.timestamp]: new Date().toISOString() }
+              ? composite.timestamp
+                ? { [composite.timestamp]: new Date().toISOString() }
+                : {}
               : { id: nextId(this.table), created_at: new Date().toISOString() }),
             ...(COLUMN_DEFAULTS[this.table] ?? {}),
             ...row,

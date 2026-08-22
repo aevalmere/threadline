@@ -34,11 +34,13 @@ describe('mock query builder', () => {
     }
   })
 
-  it('seeds the two channels the app expects', async () => {
+  it('seeds the two chat channels and one forum the app expects', async () => {
     const { data } = await mockSupabase.from('channels').select('*')
-    expect((data as { name: string }[]).map((c) => c.name).sort()).toEqual([
-      'general',
-      'random',
+    const rows = data as { name: string; kind: string }[]
+    expect(rows.map((c) => `${c.name}:${c.kind}`).sort()).toEqual([
+      'general:chat',
+      'ideas:forum',
+      'random:chat',
     ])
   })
 
@@ -625,5 +627,112 @@ describe('mock lt', () => {
     expect(got).not.toContain(ids[2])
 
     for (const id of ids) await mockSupabase.from('messages').delete().eq('id', id)
+  })
+})
+
+/**
+ * P3 forum tables. Same reasoning as the channels 23505 check: each of these
+ * reproduces a database rule whose absence would let the mock fake a state
+ * Postgres forbids.
+ */
+describe('mock posts, tags, post_tags', () => {
+  const FORUM = '10000000-0000-4000-8000-000000000003'
+
+  it('rejects a duplicate tag name with 23505, like the unique index', async () => {
+    const first = await mockSupabase
+      .from('tags')
+      .insert({ name: 'dup-probe', color: '#3b82f6' })
+      .select('*')
+      .single()
+    expect(first.error).toBeNull()
+
+    const second = await mockSupabase.from('tags').insert({ name: 'dup-probe' }).select('*')
+    expect(second.error?.code).toBe('23505')
+
+    await mockSupabase.from('tags').delete().eq('name', 'dup-probe')
+  })
+
+  it('stamps no surrogate id or created_at onto post_tags, which has neither', async () => {
+    const post = await mockSupabase
+      .from('posts')
+      .insert({ channel_id: FORUM, author_id: 'u1', title: 'pk probe' })
+      .select('*')
+      .single()
+    const tag = await mockSupabase
+      .from('tags')
+      .insert({ name: 'pk-probe' })
+      .select('*')
+      .single()
+    const postId = (post.data as { id: string }).id
+    const tagId = (tag.data as { id: string }).id
+
+    const { data, error } = await mockSupabase
+      .from('post_tags')
+      .insert({ post_id: postId, tag_id: tagId })
+      .select('*')
+      .single()
+    expect(error).toBeNull()
+    // The real table's shape is exactly two columns; a mock-invented `id` or
+    // `created_at` here is the composite-PK bug COMPOSITE_PK exists to stop.
+    expect(Object.keys(data as Record<string, unknown>).sort()).toEqual([
+      'post_id',
+      'tag_id',
+    ])
+
+    await mockSupabase.from('post_tags').delete().eq('post_id', postId)
+    await mockSupabase.from('posts').delete().eq('id', postId)
+    await mockSupabase.from('tags').delete().eq('id', tagId)
+  })
+
+  it('defaults posts.body_rich to null, not undefined', async () => {
+    const { data } = await mockSupabase
+      .from('posts')
+      .insert({ channel_id: FORUM, author_id: 'u1', title: 'defaults probe' })
+      .select('*')
+      .single()
+    const row = data as Record<string, unknown>
+    expect(row).toHaveProperty('body_rich')
+    expect(row.body_rich).toBeNull()
+    await mockSupabase.from('posts').delete().eq('id', row.id as string)
+  })
+
+  it('enforces the one-parent CHECK: both parents or neither is 23514', async () => {
+    const both = await mockSupabase
+      .from('messages')
+      .insert({ channel_id: CHANNEL, post_id: 'p1', author_id: 'u1', body: 'x' })
+      .select('*')
+    expect(both.error?.code).toBe('23514')
+
+    const neither = await mockSupabase
+      .from('messages')
+      .insert({ author_id: 'u1', body: 'x' })
+      .select('*')
+    expect(neither.error?.code).toBe('23514')
+  })
+
+  it('accepts a post-keyed message and finds it via the post_id=eq filter shape', async () => {
+    const post = await mockSupabase
+      .from('posts')
+      .insert({ channel_id: FORUM, author_id: 'u1', title: 'comment probe' })
+      .select('*')
+      .single()
+    const postId = (post.data as { id: string }).id
+
+    const { data: made, error } = await mockSupabase
+      .from('messages')
+      .insert({ post_id: postId, author_id: 'u1', body: 'a comment' })
+      .select('*')
+      .single()
+    expect(error).toBeNull()
+    expect((made as { channel_id: unknown }).channel_id).toBeNull()
+
+    const { data } = await mockSupabase
+      .from('messages')
+      .select('*')
+      .eq('post_id', postId)
+    expect((data as unknown[]).length).toBe(1)
+
+    await mockSupabase.from('messages').delete().eq('post_id', postId)
+    await mockSupabase.from('posts').delete().eq('id', postId)
   })
 })

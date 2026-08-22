@@ -10,14 +10,13 @@ import {
   linkForTask,
   myTasks,
   patchFromFields,
-  plainFromRich,
   positionBetween,
-  richFromPlain,
   statusPatch,
   taskFromMessagePayload,
   titleFromBody,
   type Task,
 } from '@/lib/tasks'
+import { plainFromRich, richFromPlain } from '@/lib/rich'
 
 const ALICE = 'a0000000-0000-4000-8000-000000000001'
 const BOB = 'b0000000-0000-4000-8000-000000000002'
