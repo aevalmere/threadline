@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 
 import type { BlockNoteEditor } from '@blocknote/core'
-import { PencilLineIcon, Trash2Icon } from 'lucide-react'
+import { Link2Icon, PencilLineIcon, Trash2Icon } from 'lucide-react'
 
+import { LinkPicker } from '@/components/docs/LinkPicker'
 import PageEditor from '@/components/docs/PageEditor'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -97,11 +98,13 @@ function PageSurface({
 }) {
   const { authorId } = useAuth()
   const { nameFor } = useProfiles()
+  const navigate = useNavigate()
   const [title, setTitle] = useState(page.title)
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [picking, setPicking] = useState(false)
 
   const titleRef = useRef(page.title)
   const editorRef = useRef<BlockNoteEditor | null>(null)
@@ -191,6 +194,30 @@ function PageSurface({
     editorRef.current = editor
   }, [])
 
+  /**
+   * Internal links stay in the SPA. Bubble phase on purpose: BlockNote's own
+   * handlers (caret placement, link toolbar) run first and preventDefault —
+   * only a click the browser would actually navigate on is claimed here.
+   */
+  const onEditorClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.defaultPrevented) return
+      const anchor = (e.target as HTMLElement).closest('a')
+      if (anchor === null) return
+      const href = anchor.getAttribute('href')
+      if (href === null) return
+      let path: string | null = null
+      if (href.startsWith('/')) path = href
+      else if (href.startsWith(window.location.origin + '/')) {
+        path = href.slice(window.location.origin.length)
+      }
+      if (path === null) return
+      e.preventDefault()
+      navigate(path)
+    },
+    [navigate],
+  )
+
   // Affordance only — the database keeps its blanket policy (DECISIONS #26's
   // shape). A page whose creator's account is gone unlocks for everyone.
   const canDelete = page.created_by === null || page.created_by === authorId
@@ -228,6 +255,15 @@ function PageSurface({
         >
           {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save failed' : 'Saved'}
         </span>
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label="Link to a task or page"
+          title="Link to a task or page"
+          onClick={() => setPicking(true)}
+        >
+          <Link2Icon />
+        </Button>
         {canDelete &&
           (confirmingDelete ? (
             <Button
@@ -273,8 +309,10 @@ function PageSurface({
       )}
 
       {/* -mx-* pulls BlockNote's gutter back so its content edge lines up
-          with the title input above. */}
-      <div className="-mx-[54px]">
+          with the title input above. The onClick is delegation for anchors
+          the editor renders — the links themselves stay keyboard-reachable
+          through the editor. */}
+      <div className="-mx-[54px]" onClick={onEditorClick}>
         <PageEditor
           pageId={page.id}
           initial={page.body_rich}
@@ -282,6 +320,22 @@ function PageSurface({
           onChange={markDirty}
         />
       </div>
+
+      <LinkPicker
+        open={picking}
+        onOpenChange={setPicking}
+        currentPageId={page.id}
+        onPick={(href, linkTitle) => {
+          const editor = editorRef.current
+          if (editor === null) return
+          editor.focus()
+          editor.insertInlineContent(
+            [{ type: 'link', href, content: linkTitle }, ' '],
+            { updateSelection: true },
+          )
+          markDirty()
+        }}
+      />
     </div>
   )
 }

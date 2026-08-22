@@ -25,6 +25,7 @@ import {
 } from '@dnd-kit/core'
 import { PlusIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import { AuthorAvatar } from '@/components/layout/AuthorAvatar'
 import { SourceChip, TaskDialog, type TaskSource } from '@/components/tasks/TaskDialog'
@@ -64,6 +65,24 @@ export default function Tasks() {
   const [view, setView] = useState<View>('board')
   const [dialog, setDialog] = useState<DialogState>(null)
   const [dragging, setDragging] = useState<Task | null>(null)
+
+  /**
+   * `?t=<taskId>` — where a doc page's task link lands (P4). Consumed once
+   * the list is loaded: hit opens the dialog, miss (deleted task, stale link)
+   * just clears the parameter and leaves the board.
+   */
+  const [params, setParams] = useSearchParams()
+  const jumpToTask = params.get('t')
+  useEffect(() => {
+    if (jumpToTask === null || tasks === null) return
+    const task = tasks.find((t) => t.id === jumpToTask)
+    if (task !== undefined) setDialog({ mode: 'edit', task })
+    setParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete('t')
+      return next
+    }, { replace: true })
+  }, [jumpToTask, tasks, setParams])
 
   const grouped = useMemo(() => groupByStatus(tasks ?? []), [tasks])
   const mine = useMemo(() => myTasks(tasks ?? [], authorId), [tasks, authorId])

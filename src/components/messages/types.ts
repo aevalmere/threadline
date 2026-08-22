@@ -15,6 +15,12 @@ export interface MessageActions {
   onReply: (message: Message) => void
   onRequestDelete: (message: Message) => void
   onCreateTask: (message: Message) => void
+  /**
+   * App path for this exact message (`/channels/<id>?m=` or `/posts/<id>?m=`)
+   * — the hover bar's Copy link, and the URL shape a doc page's link
+   * extraction recognizes (P4).
+   */
+  linkFor: (message: Message) => string
   deleteAttachment: (attachment: Attachment) => Promise<void>
   editMessage: (id: number, body: string) => Promise<void>
 }

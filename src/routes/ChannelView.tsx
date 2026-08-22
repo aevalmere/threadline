@@ -96,6 +96,7 @@ export default function ChannelView() {
     onReply: (message) => setOpenThread(threadRootFor(message)),
     onRequestDelete: (message) => setConfirmDelete(message),
     onCreateTask: (message) => setTaskFrom(message),
+    linkFor: (message) => `/channels/${channelId}?m=${message.id}`,
     deleteAttachment,
     editMessage,
   }

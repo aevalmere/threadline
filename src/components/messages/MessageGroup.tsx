@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from 'react'
 
 import {
+  CheckIcon,
+  Link2Icon,
   ListTodoIcon,
   MessageSquareIcon,
   PencilIcon,
@@ -88,6 +90,7 @@ function MessageRow({
 }) {
   const deleted = message.deleted_at != null
   const [editing, setEditing] = useState(false)
+  const [copied, setCopied] = useState(false)
   // Edit and Delete are the author's; Reply and Create task are everyone's.
   // A UI affordance, not a wall — the database deliberately stays one
   // trusted workspace (Non-negotiable 2, DECISIONS #26).
@@ -149,6 +152,23 @@ function MessageRow({
           >
             <MessageSquareIcon className="size-3.5" />
             <span className="sr-only">Reply</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={() => {
+              // Absolute, so it pastes usably anywhere; a doc page's link
+              // extraction accepts its own origin (P4).
+              const url = new URL(actions.linkFor(message), window.location.origin)
+              void navigator.clipboard.writeText(url.toString()).then(() => {
+                setCopied(true)
+                setTimeout(() => setCopied(false), 1500)
+              })
+            }}
+          >
+            {copied ? <CheckIcon className="size-3.5" /> : <Link2Icon className="size-3.5" />}
+            <span className="sr-only">{copied ? 'Link copied' : 'Copy link'}</span>
           </Button>
           {mine && (
             <Button

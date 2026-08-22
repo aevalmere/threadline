@@ -100,6 +100,7 @@ export default function PostView() {
     onReply: (message) => setOpenThread(threadRootFor(message)),
     onRequestDelete: (message) => setConfirmDelete(message),
     onCreateTask: (message) => setTaskFromComment(message),
+    linkFor: (message) => `/posts/${postId}?m=${message.id}`,
     deleteAttachment,
     editMessage,
   }
