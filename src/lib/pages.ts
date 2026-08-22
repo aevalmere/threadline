@@ -66,6 +66,13 @@ export function savePatch(
   return { title: title.trim() || 'Untitled', body_rich: bodyRich, updated_at: nowIso }
 }
 
+/**
+ * Autosave latch (SPEC §1.7: 1s debounce). Latched-trailing like the unread
+ * writes: the save fires 1s after the FIRST unsaved change — a timer that
+ * reset on every keystroke would never fire under continuous typing.
+ */
+export const AUTOSAVE_DEBOUNCE_MS = 1_000
+
 // --- The soft edit-lock (SPEC §1.7) -------------------------------------
 
 /** Refresh the claim this often while editing. */

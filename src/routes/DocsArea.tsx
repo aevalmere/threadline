@@ -64,7 +64,18 @@ export default function DocsArea() {
               </div>
             }
           />
-          <Route path=":pageId" element={<PageView />} />
+          <Route
+            path=":pageId"
+            element={
+              <PageView
+                onChanged={() => void pagesState.refresh()}
+                onDeleted={() => {
+                  void pagesState.refresh()
+                  navigate('/docs')
+                }}
+              />
+            }
+          />
         </Routes>
       </main>
     </div>

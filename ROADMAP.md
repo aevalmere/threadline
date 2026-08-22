@@ -120,10 +120,10 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 
 ## P4 — Docs · Aug 22–25 *(orig. Aug 20–23)*
 
-- [ ] Collections tree
-- [ ] BlockNote pages with debounced autosave (1s)
+- [x] Collections tree
+- [x] BlockNote pages with debounced autosave (1s)
 - [ ] Soft edit-lock — "someone is editing" banner with the editor's display name via `editing_heartbeat_at`, **no CRDT**
-- [ ] Image upload into pages
+- [x] Image upload into pages
 - [ ] Insert-link-to-task/message inside a page
 - [ ] "Linked items" backlink panel on pages and tasks
 
