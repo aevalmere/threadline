@@ -159,29 +159,7 @@ export function usePosts(channelId: string | undefined) {
 
   const updatePost = useCallback(
     async (id: string, fields: { title: string; body: string; tagNames: string[] }) => {
-      const { data, error: err } = await supabase
-        .from('posts')
-        .update(postPatch(fields))
-        .eq('id', id)
-        .select('id')
-      // Judged on rows, not error absence (DECISIONS #5).
-      if (err || (data?.length ?? 0) !== 1) {
-        throw new Error(err?.message ?? 'The update did not take effect.')
-      }
-      const diff = tagDiff(tags.get(id) ?? [], fields.tagNames)
-      const added = await ensureTags(diff.add)
-      for (const tag of added) {
-        const pt = await supabase.from('post_tags').insert({ post_id: id, tag_id: tag.id })
-        if (pt.error) throw new Error(pt.error.message)
-      }
-      if (diff.remove.length > 0) {
-        const del = await supabase
-          .from('post_tags')
-          .delete()
-          .eq('post_id', id)
-          .in('tag_id', diff.remove)
-        if (del.error) throw new Error(del.error.message)
-      }
+      await updatePostRecord(id, fields, tags.get(id) ?? [])
       await refresh()
     },
     [tags, refresh],
@@ -189,74 +167,114 @@ export function usePosts(channelId: string | undefined) {
 
   const deletePost = useCallback(
     async (id: string) => {
-      // Deleting a post cascades its comment rows in the database — which
-      // would orphan their files, because attachments have no FK (SPEC §1.8).
-      // DECISIONS #11's promise is that deletion frees the bytes, so the
-      // sweep happens here, storage objects first (the failure that leaves
-      // bytes behind is the one worth avoiding), then rows, then the post.
-      // Re-running Delete after a partial failure is safe: remove() is
-      // idempotent and every query below tolerates already-gone rows.
-      const comments = await supabase.from('messages').select('id').eq('post_id', id)
-      if (comments.error) throw new Error(comments.error.message)
-      const ownerIds = (comments.data ?? []).map((m) => String((m as { id: number }).id))
-
-      const owned: { id: string; storage_path: string }[] = []
-      if (ownerIds.length > 0) {
-        const rows = await supabase
-          .from('attachments')
-          .select('id,storage_path')
-          .eq('owner_type', 'message')
-          .in('owner_id', ownerIds)
-        if (rows.error) throw new Error(rows.error.message)
-        owned.push(...((rows.data ?? []) as typeof owned))
-      }
-      const postOwned = await supabase
-        .from('attachments')
-        .select('id,storage_path')
-        .eq('owner_type', 'post')
-        .eq('owner_id', id)
-      if (postOwned.error) throw new Error(postOwned.error.message)
-      owned.push(...((postOwned.data ?? []) as typeof owned))
-
-      if (owned.length > 0) {
-        const rm = await supabase.storage.from(BUCKET).remove(owned.map((a) => a.storage_path))
-        if (rm.error) throw new Error(`Could not delete attached files: ${rm.error.message}`)
-        const del = await supabase
-          .from('attachments')
-          .delete()
-          .in('id', owned.map((a) => a.id))
-        if (del.error) throw new Error(del.error.message)
-      }
-
-      // Links integrity is app-enforced (SPEC §1.8): a deleted post takes its
-      // edges with it, both directions, same as deleteTask — edges first so a
-      // failure part-way leaves a deletable post, never a dangling edge.
-      // Comments and post_tags cascade in the database.
-      for (const [typeCol, idCol] of [
-        ['source_type', 'source_id'],
-        ['target_type', 'target_id'],
-      ] as const) {
-        const { error: linkErr } = await supabase
-          .from('links')
-          .delete()
-          .eq(typeCol, 'post')
-          .eq(idCol, id)
-        if (linkErr) throw new Error(linkErr.message)
-      }
-      const { data, error: err } = await supabase
-        .from('posts')
-        .delete()
-        .eq('id', id)
-        .select('id')
-      if (err || (data?.length ?? 0) !== 1) {
-        throw new Error(err?.message ?? 'The delete did not take effect.')
-      }
+      await deletePostRecord(id)
       await refresh()
     },
     [refresh],
   )
 
   return { posts, tags, counts, error, refresh, createPost, updatePost, deletePost }
+}
+
+/**
+ * The post-update writes, standalone so the post page can call them with its
+ * own fetched tags — same shape as `createTaskFromMessage` (DECISIONS #6's
+ * hook-vs-context test applies to IO helpers too).
+ */
+export async function updatePostRecord(
+  id: string,
+  fields: { title: string; body: string; tagNames: string[] },
+  currentTags: readonly Tag[],
+): Promise<void> {
+  const { data, error: err } = await supabase
+    .from('posts')
+    .update(postPatch(fields))
+    .eq('id', id)
+    .select('id')
+  // Judged on rows, not error absence (DECISIONS #5).
+  if (err || (data?.length ?? 0) !== 1) {
+    throw new Error(err?.message ?? 'The update did not take effect.')
+  }
+  const diff = tagDiff(currentTags, fields.tagNames)
+  const added = await ensureTags(diff.add)
+  for (const tag of added) {
+    const pt = await supabase.from('post_tags').insert({ post_id: id, tag_id: tag.id })
+    if (pt.error) throw new Error(pt.error.message)
+  }
+  if (diff.remove.length > 0) {
+    const del = await supabase
+      .from('post_tags')
+      .delete()
+      .eq('post_id', id)
+      .in('tag_id', diff.remove)
+    if (del.error) throw new Error(del.error.message)
+  }
+}
+
+/**
+ * Delete a post and everything only it holds up.
+ *
+ * Comments and post_tags cascade in the database — but cascading comment rows
+ * would orphan their files, because attachments have no FK (SPEC §1.8).
+ * DECISIONS #11's promise is that deletion frees the bytes, so the sweep
+ * happens here: storage objects first (the failure that leaves bytes behind
+ * is the one worth avoiding), then attachment rows, then links edges both
+ * directions (app-enforced integrity, same as deleteTask), then the post.
+ * Re-running Delete after a partial failure is safe: remove() is idempotent
+ * and every query below tolerates already-gone rows.
+ */
+export async function deletePostRecord(id: string): Promise<void> {
+  const comments = await supabase.from('messages').select('id').eq('post_id', id)
+  if (comments.error) throw new Error(comments.error.message)
+  const ownerIds = (comments.data ?? []).map((m) => String((m as { id: number }).id))
+
+  const owned: { id: string; storage_path: string }[] = []
+  if (ownerIds.length > 0) {
+    const rows = await supabase
+      .from('attachments')
+      .select('id,storage_path')
+      .eq('owner_type', 'message')
+      .in('owner_id', ownerIds)
+    if (rows.error) throw new Error(rows.error.message)
+    owned.push(...((rows.data ?? []) as typeof owned))
+  }
+  const postOwned = await supabase
+    .from('attachments')
+    .select('id,storage_path')
+    .eq('owner_type', 'post')
+    .eq('owner_id', id)
+  if (postOwned.error) throw new Error(postOwned.error.message)
+  owned.push(...((postOwned.data ?? []) as typeof owned))
+
+  if (owned.length > 0) {
+    const rm = await supabase.storage.from(BUCKET).remove(owned.map((a) => a.storage_path))
+    if (rm.error) throw new Error(`Could not delete attached files: ${rm.error.message}`)
+    const del = await supabase
+      .from('attachments')
+      .delete()
+      .in('id', owned.map((a) => a.id))
+    if (del.error) throw new Error(del.error.message)
+  }
+
+  for (const [typeCol, idCol] of [
+    ['source_type', 'source_id'],
+    ['target_type', 'target_id'],
+  ] as const) {
+    const { error: linkErr } = await supabase
+      .from('links')
+      .delete()
+      .eq(typeCol, 'post')
+      .eq(idCol, id)
+    if (linkErr) throw new Error(linkErr.message)
+  }
+  const { data, error: err } = await supabase
+    .from('posts')
+    .delete()
+    .eq('id', id)
+    .select('id')
+  if (err || (data?.length ?? 0) !== 1) {
+    throw new Error(err?.message ?? 'The delete did not take effect.')
+  }
 }
 
 /**

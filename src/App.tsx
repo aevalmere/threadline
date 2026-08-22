@@ -9,6 +9,7 @@ import Docs from '@/routes/Docs'
 import ForumView from '@/routes/ForumView'
 import Forums from '@/routes/Forums'
 import Login from '@/routes/Login'
+import PostView from '@/routes/PostView'
 import Register from '@/routes/Register'
 import RequireAuth from '@/routes/RequireAuth'
 import ResetPassword from '@/routes/ResetPassword'
@@ -34,6 +35,11 @@ export default function App() {
               <Route path="/channels/:channelId" element={<ChannelView />} />
               <Route path="/forums" element={<Forums />} />
               <Route path="/forums/:channelId" element={<ForumView />} />
+              {/* Flat, not nested under the forum: the two places that link
+                  to a post — the task SourceChip and the bell — know only a
+                  post id; the post row carries channel_id for the breadcrumb
+                  back. */}
+              <Route path="/posts/:postId" element={<PostView />} />
               <Route path="/docs" element={<Docs />} />
               <Route path="/tasks" element={<Tasks />} />
               <Route path="/settings" element={<Settings />} />
