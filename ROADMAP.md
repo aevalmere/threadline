@@ -94,9 +94,23 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 - [x] Posts with title + tags
 - [x] Comments reusing the `messages` machinery *(+ the deferred `messages.post_id` FK, **and** the deferred `tasks.source_post_id` → `posts` FK — SPEC §2.3, noted in the P2 migration)*
 - [x] Tag filtering
-- [ ] Create-task-from-post
+- [x] Create-task-from-post
 
 **GATE G3** — Create a tagged post · comment on it · filter by tag · convert the post to a task.
+
+> **Gate run 2026-08-22 — machine side PASS.** `npm run build` exit 0 (715.22 kB / 210.67 kB gzip — the forum/post surfaces are the growth; warning stays un-silenced per DECISIONS #20), `npm run lint` exit 0, `npm run test` 305 tests / 14 files green, `npm run seed` 63/63 probes green against live Supabase — including the fifteen new P3 probes: four verbs on posts/tags/post_tags, the one-parent CHECK (23514), both deferred FKs on their failure side (23503), the tags unique index (23505), comment/post_tag cascades on post delete, and planted-row anon denials for posts and tags. A scripted live probe replicated PostView's exact subscription (`post_id=eq.` filter, anon client with a real session) and received both INSERT and UPDATE — first run timed out on a cold project, exactly DECISIONS #20's warm-up trap, and passed on retry. Migration reviewed pre-push (PASS, six non-blocking notes). Batch reviewer over the whole phase diff (9 commits, 40 files, +3.8k/−1.1k): **FAIL** with two confirmed findings — comment-sourced tasks rendered no chip, and post deletion left links to cascaded comments dangling — both fixed in `cb533ab`, re-review **PASS** (DECISIONS #25).
+>
+> **All four acceptance items need a browser, so none is PASS on Claude's authority** — they are Ethan's checklist below. `GATE G3 (machine): PASS`.
+>
+> **Ethan's G3 checklist** (~5 min on https://threadline-cc0.pages.dev after the deploy finishes; the seed created forum **#ideas**):
+> 1. Sidebar → Forums → **#ideas** → **New post**: give it a title, a body, and tags `bug, design` → Create. You land on the post; the tags render as dot-chips.
+> 2. **Comment** on it, reply to that comment from the hover bar (thread opens inline), and paste or drop an image into the composer — it uploads and renders a thumbnail.
+> 3. Breadcrumb back to **#ideas**: the post row shows the comment count and tags. Click the `bug` chip — the list filters and the URL carries `?tag=bug`; **Clear** restores it.
+> 4. On the post, the checklist icon → **Create task**. The title comes prefilled from the post title. Open **Tasks** — the card carries a **from #ideas** chip; clicking it lands back on the post.
+> 5. Hover a **comment** → Create task → the new card's chip jumps back to the exact comment and flashes it.
+> 6. Delete the post (trash icon → confirm). Its comments are gone with it; on the Tasks board both cards survive but their chips are gone (provenance orphaned, tasks kept — SPEC §2.3).
+>
+> **Still open from G1/G2 (async):** the G1 two-browser checklist · delete the `guest` auth user · confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages · the G2 seven-step checklist · **TEAM BETA — inviting the team stays blocking on Ethan (DECISIONS #21).**
 
 ---
 

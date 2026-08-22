@@ -1144,3 +1144,92 @@ on the ARIA spec itself: focusable descendants survive presentational-role
 flattening, so the chip stays a working link everywhere it renders. The
 nesting is an HTML-validity wart, not a behavior defect; noted here so a
 future session doesn't re-litigate it.
+
+---
+
+## #25 — 2026-08-22 — P3 build: flat post URLs, the parent parameterization, and what the batch review caught
+
+**Post URLs are flat — `/posts/:postId`, not nested under the forum.** The
+two places that link to a post — the task SourceChip and the notification
+bell — know only a post id; a nested URL would force each to resolve the
+forum first (the bell from inside a click handler). The post row carries
+`channel_id` for the breadcrumb back. `/forums/:channelId` remains the post
+list, and kind guards redirect `/channels/<forum>` ↔ `/forums/<chat>` so the
+URL spaces stay honest.
+
+**Comments reuse chat wholesale via a `MessageParent` parameterization.**
+`useMessages`, `pending.ts` and `resolveJump` now key on
+`{column: 'channel_id' | 'post_id', id}` instead of a channel id — carrying
+the *column name* keeps every query site to one `.eq(parent.column,
+parent.id)` with no mapping step to get wrong. Two rules a future session
+must not break:
+- **The hook depends on the parent's primitives, never the object.** Callers
+  build `channelParent(id)` inline per render; an object in a dependency
+  array would tear down and resubscribe the realtime channel every render —
+  precisely the budget Non-negotiable 8 protects. The reviewer verified all
+  six dependency arrays.
+- **DECISIONS #8's property survives**: every comment send path passes
+  `threadRootFor(root)`, so the trigger never rewrites `thread_root_id` on a
+  row the client is waiting to reconcile. `pending.test.ts` now pins both
+  parent directions.
+
+No P3 realtime additions: comments ride the messages publication, whose
+column list has carried `post_id` since P0 (#4). A scripted live probe
+(PostView's exact topic and `post_id=eq.` filter, anon client with a real
+session) delivered both INSERT and UPDATE — after first timing out on a cold
+project and passing on retry, which is #20's warm-up trap reconfirmed.
+
+**Tags.** Workspace-global, matched case-insensitively via
+`normalizeTagName` (lowercase, whitespace→hyphen, 24-char cap); created on
+first use with a color picked deterministically from an 8-hex palette, so
+two clients racing to create the same tag also agree on its color and the
+loser adopts the winner's row on 23505 (`ensureTags`). Color renders only as
+a dot — never text or background — so theme contrast needs no per-color
+tuning. The form input is one comma-separated text field; a chip editor is
+Non-negotiable 10 territory.
+
+**No forum unread badges in v1.** `channel_members.last_read_message_id` is
+per-channel and cannot express per-post unread. Provably harmless the other
+way: `unread_counts()` joins `m.channel_id = c.id`, and a comment's
+channel_id is NULL, so forum traffic can never pollute chat badges. If Ethan
+wants forum unread it is schema work, not a patch.
+
+**FK delete behaviors, including the compound one.** Post cascades (channel
+→ posts, post → comments); `tasks.source_post_id` sets null. Deleting a
+teammate's account therefore deletes their posts *and everyone's comments on
+them* — flagged by the migration reviewer, kept deliberately: chat already
+behaves this way (deleting an author cascades their messages, and
+`thread_root_id`'s cascade takes other people's replies in their threads
+with them). §1.1's removal procedure is rare and forums should not outlive
+chat semantics.
+
+**Deletion frees the bytes, and edges die with their endpoints.**
+`deletePostRecord` extends #11's promise across the cascade: comment and
+post attachments are swept storage-first, then rows, then `links` edges both
+directions — for the post *and for its cascading comments*, the second of
+which the batch reviewer caught missing (it is #24's dangling-edge defect,
+reintroduced by the FK cascade). Channel deletion still leaks attachments —
+pre-existing, now BACKLOG'd with a wider blast radius.
+
+**The batch review (Non-negotiable 7), honestly recorded.** First verdict
+FAIL with two confirmed findings: the dangling comment edges above, and a
+worse one — a task created from a *forum comment* rendered no chip at all
+(the source message has `channel_id` NULL, so the P2-era resolution dropped
+it; the message→task→jump-back path §1.6 promises was a dead end). Fixed in
+`cb533ab`: the source batch carries both parents, comment sources chain
+through `posts` to their forum, and `TaskSource` gained a `comment` shape
+linking `/posts/:id?m=`. Re-review: PASS, scoping verified exact. Carried
+non-blocking: a comment mention's bell label reads "X mentioned you" with no
+"in #forum" (navigation correct; the label would cost a post-title fetch).
+
+**Two notes for P5's `posts.search_tsv`.** `body_rich` is nullable, so the
+generated expression needs `coalesce` or a body-less post indexes NULL; and
+`jsonb_to_tsvector(…, '["string"]')` walks every string value, which
+includes BlockNote scaffolding tokens ("paragraph", "text") — decide
+filter-or-accept *before* creating the column, since changing a generated
+column later rewrites a populated table.
+
+**A tooling trap, so it is not rediscovered.** A PowerShell
+`-replace`-and-rewrite of `jump.test.ts` silently re-encoded it (BOM +
+mojibake in comments); the reviewer caught it. Source rewrites go through
+the editor tools, never `Get-Content | Set-Content`.
