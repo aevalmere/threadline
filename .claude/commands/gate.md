@@ -17,7 +17,7 @@ npm run test       # full Vitest run, must be green
 npm run seed       # live-Supabase probes, must be green
 ```
 
-The build must run with `VITE_MOCK_BACKEND=false`, or the bundle number is a lie (DECISIONS #20). Also run any scripted live probes the phase calls for (realtime delivery, resync draining — see `scripts/`). A failing check ends the gate. Do not proceed to interpretation, do not explain it away.
+Also run any scripted live probes the phase calls for (realtime delivery, resync draining — see `scripts/`). A failing check ends the gate. Do not proceed to interpretation, do not explain it away. *(The old `VITE_MOCK_BACKEND=false` build caveat is gone with the mock backend itself — removed at Ethan's call during the beta; DECISIONS #29.)*
 
 ## 2. Acceptance walk
 
