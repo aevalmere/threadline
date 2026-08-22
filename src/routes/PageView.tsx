@@ -15,6 +15,8 @@ import {
   EDIT_LOCK_POLL_MS,
   HEARTBEAT_INTERVAL_MS,
   editingBanner,
+  flattenTree,
+  type Collection,
   type Page,
 } from '@/lib/pages'
 import { useProfiles } from '@/lib/profiles-context'
@@ -34,9 +36,13 @@ import {
  * the delete affordance.
  */
 export default function PageView({
+  collections,
+  onMove,
   onChanged,
   onDeleted,
 }: {
+  collections: Collection[]
+  onMove: (pageId: string, collectionId: string | null) => Promise<void>
   /** The sidebar list shows titles — re-fetched after a save changes one. */
   onChanged: () => void
   onDeleted: () => void
@@ -77,6 +83,8 @@ export default function PageView({
     <PageSurface
       key={page.id}
       page={page}
+      collections={collections}
+      onMove={onMove}
       refreshLock={refreshLock}
       onChanged={onChanged}
       onDeleted={onDeleted}
@@ -88,11 +96,15 @@ type SaveState = 'saved' | 'saving' | 'error'
 
 function PageSurface({
   page,
+  collections,
+  onMove,
   refreshLock,
   onChanged,
   onDeleted,
 }: {
   page: Page
+  collections: Collection[]
+  onMove: (pageId: string, collectionId: string | null) => Promise<void>
   refreshLock: () => Promise<void>
   onChanged: () => void
   onDeleted: () => void
@@ -106,6 +118,8 @@ function PageSurface({
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
+  const [collectionId, setCollectionId] = useState(page.collection_id)
+  const [moveError, setMoveError] = useState<string | null>(null)
 
   const titleRef = useRef(page.title)
   const editorRef = useRef<BlockNoteEditor | null>(null)
@@ -298,6 +312,40 @@ function PageSurface({
               <Trash2Icon />
             </Button>
           ))}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <label htmlFor="page-collection" className="text-muted-foreground text-xs">
+          In
+        </label>
+        <select
+          id="page-collection"
+          value={collectionId ?? ''}
+          onChange={(e) => {
+            const next = e.target.value === '' ? null : e.target.value
+            const previous = collectionId
+            setCollectionId(next)
+            setMoveError(null)
+            onMove(page.id, next).catch((err: unknown) => {
+              setCollectionId(previous)
+              setMoveError(err instanceof Error ? err.message : 'Could not move the page.')
+            })
+          }}
+          className="border-input bg-background rounded-md border px-2 py-1 text-xs"
+        >
+          <option value="">Unfiled</option>
+          {flattenTree(collections).map((row) => (
+            <option key={row.collection.id} value={row.collection.id}>
+              {' '.repeat(row.depth * 2)}
+              {row.collection.name}
+            </option>
+          ))}
+        </select>
+        {moveError && (
+          <p role="alert" className="text-destructive text-xs">
+            {moveError}
+          </p>
+        )}
       </div>
 
       {saveState === 'error' && saveError && (

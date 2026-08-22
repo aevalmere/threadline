@@ -68,6 +68,8 @@ export default function DocsArea() {
             path=":pageId"
             element={
               <PageView
+                collections={collectionsState.collections ?? []}
+                onMove={pagesState.movePage}
                 onChanged={() => void pagesState.refresh()}
                 onDeleted={() => {
                   void pagesState.refresh()
