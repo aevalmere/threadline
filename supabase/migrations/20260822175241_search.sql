@@ -1,18 +1,25 @@
--- P5 · search — search_tsv on posts, pages, tasks, and search_all()
+﻿-- P5 · search — search_tsv on posts, pages, tasks, and search_all()
 -- (SPEC.md §1.10, §3). `messages` has carried its column and GIN since P0,
 -- which is why the busiest table needs nothing here.
 --
 -- Two deliberate deviations from §3's original sketch, amended there in this
 -- commit:
 --
--- 1. Rich bodies are flattened through jsonb_path_query_array('$.**."text"')
---    BEFORE jsonb_to_tsvector. The sketch's bare jsonb_to_tsvector over the
---    whole document walks every string value — BlockNote scaffolding
---    included — so searching "paragraph" would have matched every document
---    (DECISIONS #25 said decide before the column exists; this is the
---    decision). BlockNote keeps all human-readable text under "text" keys at
---    every nesting level; types, style names, block ids, and image storage
---    paths live under other keys and stay out of the index.
+-- 1. Rich bodies are flattened through
+--    jsonb_path_query_array('strict $.**."text"', silent) BEFORE
+--    jsonb_to_tsvector. The sketch's bare jsonb_to_tsvector over the whole
+--    document walks every string value — BlockNote scaffolding included — so
+--    searching "paragraph" would have matched every document (DECISIONS #25
+--    said decide before the column exists; this is the decision). BlockNote
+--    keeps human-readable text under "text" keys at every nesting level
+--    (image captions are the known, accepted exception); types, style names,
+--    block ids, and storage paths live under other keys and stay out.
+--    STRICT mode + silent, measured against the live database: lax mode's
+--    array auto-unwrapping collects every value TWICE (once via the content
+--    array, once via the inline node), which would bake doubled lexemes into
+--    the stored vectors and doubled sentences into every snippet; strict
+--    collects each exactly once, and silent swallows the structural errors
+--    strict would otherwise raise on non-object nodes.
 --
 -- 2. search_all() returns parent_type/parent_id beyond the sketch's columns,
 --    because a message hit is un-navigable without its parent: a chat
@@ -29,7 +36,7 @@ alter table public.posts
     setweight(
       jsonb_to_tsvector(
         'english',
-        jsonb_path_query_array(coalesce(body_rich, '[]'::jsonb), '$.**."text"'),
+        jsonb_path_query_array(coalesce(body_rich, '[]'::jsonb), 'strict $.**."text"', '{}'::jsonb, true),
         '["string"]'
       ),
       'B'
@@ -44,7 +51,7 @@ alter table public.pages
     setweight(
       jsonb_to_tsvector(
         'english',
-        jsonb_path_query_array(coalesce(body_rich, '[]'::jsonb), '$.**."text"'),
+        jsonb_path_query_array(coalesce(body_rich, '[]'::jsonb), 'strict $.**."text"', '{}'::jsonb, true),
         '["string"]'
       ),
       'B'
@@ -59,7 +66,7 @@ alter table public.tasks
     setweight(
       jsonb_to_tsvector(
         'english',
-        jsonb_path_query_array(coalesce(description_rich, '[]'::jsonb), '$.**."text"'),
+        jsonb_path_query_array(coalesce(description_rich, '[]'::jsonb), 'strict $.**."text"', '{}'::jsonb, true),
         '["string"]'
       ),
       'B'
@@ -84,7 +91,7 @@ as $$
     (
       select string_agg(t, ' ')
       from jsonb_array_elements_text(
-        jsonb_path_query_array(coalesce(doc, '[]'::jsonb), '$.**."text"')
+        jsonb_path_query_array(coalesce(doc, '[]'::jsonb), 'strict $.**."text"', '{}'::jsonb, true)
       ) as t
     ),
     ''
@@ -128,7 +135,13 @@ as $$
       -- user-authored, so HTML markup would force the client to inject it.
       -- Markers parse into plain segments (splitSnippet in src/lib/search.ts).
       ts_headline('english', m.body, tsq.v, 'StartSel=⟦, StopSel=⟧') as snippet,
-      ts_rank(m.search_tsv, tsq.v) as rank
+      -- The P0 messages vector is unweighted (all lexemes weight D, rank
+      -- multiplier 0.1), while the other branches carry A/B — unweighted, an
+      -- exact chat hit would rank ~4-10× below an equivalent doc hit and the
+      -- global LIMIT could squeeze messages out entirely, against G5's "finds
+      -- a phrase from a week-old chat message". Re-weighting at query time
+      -- costs the matched rows only; the messages COLUMN stays untouched.
+      ts_rank(setweight(m.search_tsv, 'B'), tsq.v) as rank
     from public.messages m
     cross join tsq
     left join public.channels c on c.id = m.channel_id

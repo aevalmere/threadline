@@ -1541,6 +1541,7 @@ async function rlsCheck(email: string) {
   results.push(...(await tasksLinksCheck(anon)))
   results.push(...(await postsTagsCheck(anon)))
   results.push(...(await pagesCheck(anon)))
+  results.push(...(await searchCheck(anon)))
   results.push(...(await accountsCheck()))
   results.push(...(await deniedWithoutSession()))
 
@@ -1723,6 +1724,193 @@ async function pagesCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
           (delPage.data?.length ?? 0) === 0 ? ' — silently blocked by RLS' : ''
         }`,
   })
+
+  return out
+}
+
+/**
+ * search_all() — SPEC §1.10, §3. What only the live database can prove: the
+ * four search_tsv columns exist and match, the function unions and ranks,
+ * message hits carry a navigable parent, tombstones stay out, and the
+ * scaffolding-token decision holds — BlockNote's own vocabulary ("paragraph")
+ * must not match a document whose human text never says it.
+ */
+async function searchCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
+  const out: ProbeResult[] = []
+  const TOKEN = 'zephyrquill' // nonsense, so live data can never collide
+
+  // Pre-clean debris from an interrupted run.
+  die('sweep stale search probe messages', (await admin.from('messages').delete().ilike('body', `%${TOKEN}%`)).error)
+  die('sweep stale search probe posts', (await admin.from('posts').delete().eq('title', `__probe ${TOKEN}`)).error)
+  die('sweep stale search probe pages', (await admin.from('pages').delete().eq('title', `__probe ${TOKEN}`)).error)
+  die('sweep stale search probe tasks', (await admin.from('tasks').delete().eq('title', `__probe ${TOKEN}`)).error)
+
+  const me = await anon.auth.getUser()
+  const myId = me.data.user?.id
+  if (!myId) return [{ verb: 'search setup', ok: false, detail: 'no session user' }]
+
+  const general = await admin
+    .from('channels')
+    .select('id')
+    .eq('name', 'general')
+    .eq('kind', 'chat')
+    .maybeSingle<{ id: string }>()
+  const forum = await admin
+    .from('channels')
+    .select('id')
+    .eq('name', 'ideas')
+    .eq('kind', 'forum')
+    .maybeSingle<{ id: string }>()
+  if (!general.data || !forum.data) {
+    return [{ verb: 'search setup', ok: false, detail: 'seed channels missing' }]
+  }
+
+  const rich = [
+    {
+      type: 'paragraph',
+      content: [{ type: 'text', text: `the ${TOKEN} appears in body text`, styles: {} }],
+    },
+  ]
+  const msg = await anon
+    .from('messages')
+    .insert({ channel_id: general.data.id, author_id: myId, body: `chat about ${TOKEN} here` })
+    .select('id')
+    .single<{ id: number }>()
+  const post = await anon
+    .from('posts')
+    .insert({ channel_id: forum.data.id, author_id: myId, title: `__probe ${TOKEN}`, body_rich: rich })
+    .select('id')
+    .single<{ id: string }>()
+  const page = await anon
+    .from('pages')
+    .insert({ title: `__probe ${TOKEN}`, body_rich: rich, created_by: myId })
+    .select('id')
+    .single<{ id: string }>()
+  const task = await anon
+    .from('tasks')
+    // Carries the rich body too, so the tasks column's flattening branch is
+    // exercised with content — a null description would make the scaffold
+    // assertion below hollow for tasks (review finding at G5 prep).
+    .insert({
+      title: `__probe ${TOKEN}`,
+      description_rich: rich,
+      status: 'todo',
+      position: 999999,
+      created_by: myId,
+    })
+    .select('id')
+    .single<{ id: string }>()
+  if (msg.error || post.error || page.error || task.error) {
+    return [
+      {
+        verb: 'search setup',
+        ok: false,
+        detail: (msg.error ?? post.error ?? page.error ?? task.error)?.message ?? 'plant failed',
+      },
+    ]
+  }
+
+  interface Hit {
+    entity_type: string
+    entity_id: string
+    parent_type: string | null
+    parent_id: string | null
+    title: string
+    snippet: string
+    rank: number
+  }
+  // A body-less page: with the coalesce missing, a null body would NULL the
+  // whole generated vector and this row would silently never match — an
+  // insert succeeds either way, so only a search can prove the difference.
+  const bare = await anon
+    .from('pages')
+    .insert({ title: `__probe ${TOKEN}`, created_by: myId })
+    .select('id')
+    .single<{ id: string }>()
+  if (bare.error || !bare.data) {
+    return [{ verb: 'search setup', ok: false, detail: bare.error?.message ?? 'bare plant failed' }]
+  }
+
+  const found = await anon.rpc('search_all', { q: TOKEN })
+  const hits = (found.data ?? []) as Hit[]
+  const types = new Set(hits.map((h) => h.entity_type))
+  out.push({
+    verb: 'search union',
+    ok: !found.error && ['message', 'post', 'page', 'task'].every((t) => types.has(t)),
+    detail: found.error
+      ? found.error.message
+      : `${hits.length} hits across ${[...types].sort().join('/')}`,
+  })
+  out.push({
+    verb: 'search null body',
+    ok: hits.some((h) => h.entity_type === 'page' && h.entity_id === bare.data.id),
+    detail: hits.some((h) => h.entity_id === bare.data.id)
+      ? 'a body-less page still matches on its title — the coalesce holds'
+      : 'a body-less page never matches — a null body is poisoning the vector',
+  })
+
+  const msgHit = hits.find((h) => h.entity_type === 'message' && h.entity_id === String(msg.data.id))
+  out.push({
+    verb: 'search parent',
+    ok:
+      msgHit !== undefined &&
+      msgHit.parent_type === 'channel' &&
+      msgHit.parent_id === general.data.id &&
+      msgHit.title === '#general',
+    detail: msgHit
+      ? `message hit carries (${msgHit.parent_type}, #general)`
+      : 'message hit missing',
+  })
+  out.push({
+    verb: 'search snippet',
+    ok: msgHit !== undefined && msgHit.snippet.includes('⟦') && msgHit.snippet.includes('⟧'),
+    detail: msgHit?.snippet.includes('⟦')
+      ? 'ts_headline marks with brackets, not HTML'
+      : `snippet: ${msgHit?.snippet ?? 'n/a'}`,
+  })
+
+  // The scaffolding decision: every planted rich body contains type:'paragraph',
+  // and none of them may match the word.
+  const scaffold = await anon.rpc('search_all', { q: 'paragraph' })
+  const scaffoldIds = new Set(((scaffold.data ?? []) as Hit[]).map((h) => h.entity_id))
+  const leaked =
+    scaffoldIds.has(page.data.id) || scaffoldIds.has(post.data.id) || scaffoldIds.has(task.data.id)
+  out.push({
+    verb: 'search scaffold',
+    ok: !scaffold.error && !leaked,
+    detail: scaffold.error
+      ? scaffold.error.message
+      : leaked
+        ? 'BlockNote scaffolding tokens are indexed — the jsonpath filter is not working'
+        : 'searching "paragraph" does not match documents that never say it',
+  })
+
+  // Tombstones stay out.
+  const del = await anon
+    .from('messages')
+    .update({ deleted_at: new Date().toISOString(), body: '' })
+    .eq('id', msg.data.id)
+    .select('id')
+  const after = await anon.rpc('search_all', { q: TOKEN })
+  const afterIds = new Set(((after.data ?? []) as Hit[]).map((h) => `${h.entity_type}:${h.entity_id}`))
+  out.push({
+    verb: 'search deleted',
+    ok:
+      !del.error &&
+      (del.data?.length ?? 0) === 1 &&
+      !afterIds.has(`message:${String(msg.data.id)}`) &&
+      afterIds.has(`post:${post.data.id}`),
+    detail: afterIds.has(`message:${String(msg.data.id)}`)
+      ? 'a tombstoned message still surfaces'
+      : 'tombstoned message dropped; live rows remain',
+  })
+
+  // Clean up — judged, not fire-and-forget.
+  die('remove search probe message', (await admin.from('messages').delete().eq('id', msg.data.id)).error)
+  die('remove search probe post', (await admin.from('posts').delete().eq('id', post.data.id)).error)
+  die('remove search probe page', (await admin.from('pages').delete().eq('id', page.data.id)).error)
+  die('remove search probe bare page', (await admin.from('pages').delete().eq('id', bare.data.id)).error)
+  die('remove search probe task', (await admin.from('tasks').delete().eq('id', task.data.id)).error)
 
   return out
 }
@@ -2026,6 +2214,37 @@ async function deniedWithoutSession() {
         : `EXECUTABLE without a session — returned ${
             Array.isArray(counts.data) ? counts.data.length : 0
           } rows; the grant is wrong even though RLS is hiding it`,
+  })
+
+  // search_all() gets the identical treatment — the same #18 lesson, asserted
+  // at birth instead of retrofitted: judged on refusal, never emptiness
+  // (security invoker + RLS would hand anon [] under any grant).
+  const search = await anon.rpc('search_all', { q: 'anything' })
+  const searchRefused = search.error?.code === '42501'
+  out.push({
+    verb: 'anon search',
+    ok: searchRefused,
+    detail: searchRefused
+      ? `refused (${search.error?.message})`
+      : search.error
+        ? `refused for the wrong reason: ${search.error.code} — ${search.error.message}`
+        : `EXECUTABLE without a session — returned ${
+            Array.isArray(search.data) ? search.data.length : 0
+          } rows; the grant is wrong even though RLS is hiding it`,
+  })
+
+  // flatten_rich_text reads no tables, so RLS cannot even pretend to cover
+  // it — the grant is the only wall, which makes this probe the whole story.
+  const flatten = await anon.rpc('flatten_rich_text', { doc: [] })
+  const flattenRefused = flatten.error?.code === '42501'
+  out.push({
+    verb: 'anon flatten',
+    ok: flattenRefused,
+    detail: flattenRefused
+      ? `refused (${flatten.error?.message})`
+      : flatten.error
+        ? `refused for the wrong reason: ${flatten.error.code} — ${flatten.error.message}`
+        : 'EXECUTABLE without a session — the helper grant is wrong',
   })
 
   // Storage has its own policy surface (DECISIONS #9), so it needs its own
