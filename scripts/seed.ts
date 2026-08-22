@@ -83,11 +83,12 @@ async function ensureChannel(
   name: string,
   topic: string,
   createdBy: string,
+  kind: 'chat' | 'forum' = 'chat',
 ): Promise<string> {
   const { data, error } = await admin
     .from('channels')
     .upsert(
-      { name, kind: 'chat', topic, created_by: createdBy },
+      { name, kind, topic, created_by: createdBy },
       { onConflict: 'name,kind' },
     )
     .select('id')
@@ -118,9 +119,13 @@ async function main() {
   }
   console.log('✓ profiles     created by the handle_new_user trigger')
 
-  // 2. Channels + membership.
+  // 2. Channels + membership. The forum is structure like the chat channels:
+  //    P3's post list, tag filter and comment surfaces are all unreachable
+  //    without at least one forum-kind channel. No membership rows — unread
+  //    pointers are chat-only (SPEC §1.4).
   const general = await ensureChannel('general', 'Everything and anything', userA)
   const random = await ensureChannel('random', 'Off-topic', userB)
+  await ensureChannel('ideas', 'Pitches and proposals', userA, 'forum')
 
   const { error: memberErr } = await admin.from('channel_members').upsert(
     [
@@ -132,7 +137,7 @@ async function main() {
     { onConflict: 'channel_id,user_id' },
   )
   die('add channel members', memberErr)
-  console.log('✓ channels     #general, #random (both users in both)')
+  console.log('✓ channels     #general, #random (both users in both), forum #ideas')
 
   // 3. No message seeding. The original 50 filler messages were deleted from
   //    production on 2026-08-10 at Ethan's request once the channel had real
@@ -867,6 +872,292 @@ async function tasksLinksCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
 }
 
 /**
+ * P3's tables and the two deferred FKs — SPEC §2.3, the posts_tags migration.
+ *
+ * Beyond the four verbs on `posts`/`tags`/`post_tags`, this asserts what only
+ * the database can prove: the one-parent CHECK rejects a message wearing both
+ * parents, both deferred FKs actually exist (a garbage post id must fail
+ * 23503 — nothing else in the app ever exercises the failure side), the tags
+ * unique index fires, and deleting a post cascades its comments.
+ */
+async function postsTagsCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
+  const out: ProbeResult[] = []
+  const me = await ensureUser(EMAIL_A)
+
+  // Pre-clean debris from an interrupted earlier run, same discipline as
+  // tasksLinksCheck. Deleting stale posts cascades their post_tags and
+  // comments, so those need no sweep of their own.
+  die(
+    'sweep stale probe posts',
+    (await admin.from('posts').delete().eq('title', '__probe post')).error,
+  )
+  die(
+    'sweep stale probe tags',
+    (await admin.from('tags').delete().eq('name', '__probe-tag')).error,
+  )
+
+  const forum = await admin
+    .from('channels')
+    .select('id')
+    .eq('name', 'ideas')
+    .eq('kind', 'forum')
+    .maybeSingle<{ id: string }>()
+  if (forum.error || !forum.data) {
+    return [{ verb: 'post insert', ok: false, detail: 'no #ideas forum to post into' }]
+  }
+  const general = await admin
+    .from('channels')
+    .select('id')
+    .eq('name', 'general')
+    .eq('kind', 'chat')
+    .maybeSingle<{ id: string }>()
+
+  const post = await anon
+    .from('posts')
+    .insert({
+      channel_id: forum.data.id,
+      author_id: me,
+      title: '__probe post',
+      // The BlockNote paragraph shape richFromPlain writes (DECISIONS #23).
+      body_rich: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'probe body', styles: {} }] },
+      ],
+    })
+    .select('id')
+    .single<{ id: string }>()
+  out.push({
+    verb: 'post insert',
+    ok: !post.error && !!post.data,
+    detail: post.error?.message ?? 'created in the forum with a rich body',
+  })
+
+  if (!post.data) {
+    for (const verb of [
+      'post read',
+      'post update',
+      'comment insert',
+      'msg both',
+      'msg bad post',
+      'task bad post',
+      'tag insert',
+      'tag duplicate',
+      'post_tag ins',
+      'post delete',
+      'comment gone',
+      'post_tag gone',
+      'tag delete',
+    ]) {
+      out.push({ verb, ok: false, detail: 'skipped — post insert failed' })
+    }
+    return out
+  }
+  const postId = post.data.id
+
+  const sel = await anon.from('posts').select('id').eq('id', postId)
+  out.push({
+    verb: 'post read',
+    ok: !sel.error && (sel.data?.length ?? 0) === 1,
+    detail: sel.error ? sel.error.message : `${sel.data?.length ?? 0} rows visible`,
+  })
+
+  const upd = await anon
+    .from('posts')
+    .update({ title: '__probe post' })
+    .eq('id', postId)
+    .select('id')
+  out.push({
+    verb: 'post update',
+    ok: !upd.error && (upd.data?.length ?? 0) === 1,
+    detail: upd.error ? upd.error.message : `${upd.data?.length ?? 0} row updated`,
+  })
+
+  // A comment is a messages row keyed by post_id — the XOR CHECK's happy
+  // path and the messages.post_id FK's happy path in one insert.
+  const comment = await anon
+    .from('messages')
+    .insert({ post_id: postId, author_id: me, body: '__post_probe' })
+    .select('id')
+    .single<{ id: number }>()
+  out.push({
+    verb: 'comment insert',
+    ok: !comment.error && !!comment.data,
+    detail: comment.error?.message ?? 'message row written with post_id as its parent',
+  })
+
+  // Both parents set must be rejected — every consumer relies on the two
+  // sets being disjoint (unread counts, channel filters, comment counts).
+  const both = await anon
+    .from('messages')
+    .insert({
+      channel_id: general.data?.id ?? forum.data.id,
+      post_id: postId,
+      author_id: me,
+      body: '__post_probe',
+    })
+    .select('id')
+  out.push({
+    verb: 'msg both',
+    ok: both.error?.code === '23514',
+    detail:
+      both.error?.code === '23514'
+        ? 'a message wearing both parents was rejected (23514)'
+        : `both parents accepted — ${both.error?.message ?? 'no error'}`,
+  })
+  if (both.data?.length) {
+    die(
+      'remove the both-parents probe row',
+      (await admin.from('messages').delete().in('id', both.data.map((r: { id: number }) => r.id))).error,
+    )
+  }
+
+  // The two deferred FKs. Only the failure side proves they exist — every
+  // app write uses real ids, so a missing constraint would never surface.
+  const ghost = crypto.randomUUID()
+  const badMsg = await anon
+    .from('messages')
+    .insert({ post_id: ghost, author_id: me, body: '__post_probe' })
+    .select('id')
+  out.push({
+    verb: 'msg bad post',
+    ok: badMsg.error?.code === '23503',
+    detail:
+      badMsg.error?.code === '23503'
+        ? 'a comment pointing at no post was rejected (23503)'
+        : `accepted or wrong error — ${badMsg.error?.message ?? 'no error'}`,
+  })
+  if (badMsg.data?.length) {
+    die(
+      'remove the bad-post probe message',
+      (await admin.from('messages').delete().in('id', badMsg.data.map((r: { id: number }) => r.id))).error,
+    )
+  }
+
+  const badTask = await anon
+    .from('tasks')
+    .insert({
+      title: '__probe bad',
+      status: 'todo',
+      position: 1,
+      source_post_id: ghost,
+      created_by: me,
+    })
+    .select('id')
+  out.push({
+    verb: 'task bad post',
+    ok: badTask.error?.code === '23503',
+    detail:
+      badTask.error?.code === '23503'
+        ? 'a task sourced from no post was rejected (23503)'
+        : `accepted or wrong error — ${badTask.error?.message ?? 'no error'}`,
+  })
+  if (badTask.data?.length) {
+    die(
+      'remove the bad-source probe task',
+      (await admin.from('tasks').delete().in('id', badTask.data.map((r: { id: string }) => r.id))).error,
+    )
+  }
+
+  const tag = await anon
+    .from('tags')
+    .insert({ name: '__probe-tag', color: '#3b82f6' })
+    .select('id')
+    .single<{ id: string }>()
+  out.push({
+    verb: 'tag insert',
+    ok: !tag.error && !!tag.data,
+    detail: tag.error?.message ?? 'workspace tag created',
+  })
+
+  if (tag.data) {
+    // ensureTags leans on this 23505 to resolve creation races.
+    const dup = await anon.from('tags').insert({ name: '__probe-tag' }).select('id')
+    out.push({
+      verb: 'tag duplicate',
+      ok: dup.error?.code === '23505',
+      detail:
+        dup.error?.code === '23505'
+          ? 'a duplicate name was rejected (23505)'
+          : `duplicate accepted — ${dup.error?.message ?? 'no error'}`,
+    })
+    if (dup.data?.length) {
+      die(
+        'remove the duplicate probe tag',
+        (await admin.from('tags').delete().in('id', dup.data.map((r: { id: string }) => r.id))).error,
+      )
+    }
+
+    const pt = await anon
+      .from('post_tags')
+      .insert({ post_id: postId, tag_id: tag.data.id })
+      .select('post_id')
+    out.push({
+      verb: 'post_tag ins',
+      ok: !pt.error && (pt.data?.length ?? 0) === 1,
+      detail: pt.error ? pt.error.message : 'join row written',
+    })
+  } else {
+    for (const verb of ['tag duplicate', 'post_tag ins']) {
+      out.push({ verb, ok: false, detail: 'skipped — tag insert failed' })
+    }
+  }
+
+  // Delete the post through the anon client, then prove the cascades did
+  // their work: FK cascade on comments, PK cascade on post_tags.
+  const pdel = await anon.from('posts').delete().eq('id', postId).select('id')
+  out.push({
+    verb: 'post delete',
+    ok: !pdel.error && (pdel.data?.length ?? 0) === 1,
+    detail: pdel.error ? pdel.error.message : 'probe post removed',
+  })
+
+  const orphanComments = await admin
+    .from('messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('post_id', postId)
+  out.push({
+    verb: 'comment gone',
+    ok: !orphanComments.error && (orphanComments.count ?? 0) === 0,
+    detail:
+      (orphanComments.count ?? 0) === 0
+        ? 'comments cascaded with the post'
+        : `${orphanComments.count} comment rows survived the post delete`,
+  })
+
+  const orphanJoins = await admin
+    .from('post_tags')
+    .select('post_id', { count: 'exact', head: true })
+    .eq('post_id', postId)
+  out.push({
+    verb: 'post_tag gone',
+    ok: !orphanJoins.error && (orphanJoins.count ?? 0) === 0,
+    detail:
+      (orphanJoins.count ?? 0) === 0
+        ? 'join rows cascaded with the post'
+        : `${orphanJoins.count} join rows survived the post delete`,
+  })
+
+  if (tag.data) {
+    const tdel = await anon.from('tags').delete().eq('id', tag.data.id).select('id')
+    out.push({
+      verb: 'tag delete',
+      ok: !tdel.error && (tdel.data?.length ?? 0) === 1,
+      detail: tdel.error ? tdel.error.message : 'probe tag removed',
+    })
+  } else {
+    out.push({ verb: 'tag delete', ok: false, detail: 'skipped — tag insert failed' })
+  }
+
+  // Belt and braces if the anon delete failed: the admin sweep keeps the
+  // next run clean either way.
+  die(
+    'sweep the probe post',
+    (await admin.from('posts').delete().eq('id', postId)).error,
+  )
+
+  return out
+}
+
+/**
  * The account system — DECISIONS #14, and the evidence for the usernames
  * migration.
  *
@@ -1200,6 +1491,7 @@ async function rlsCheck(email: string) {
   results.push(...(await unreadPointerCheck(anon)))
   results.push(...(await notificationsCheck(anon)))
   results.push(...(await tasksLinksCheck(anon)))
+  results.push(...(await postsTagsCheck(anon)))
   results.push(...(await accountsCheck()))
   results.push(...(await deniedWithoutSession()))
 
@@ -1350,6 +1642,83 @@ async function deniedWithoutSession() {
       .from('tasks')
       .delete()
       .eq('id', plantedTaskId)).error)
+  }
+
+  // Posts and tags — same planted-row discipline: an empty table returns []
+  // under any policy, so plant with admin first, then judge the read.
+  die(
+    'sweep stale anon probe posts',
+    (await admin.from('posts').delete().eq('title', '__anon_probe')).error,
+  )
+  const forum = await admin
+    .from('channels')
+    .select('id')
+    .eq('name', 'ideas')
+    .eq('kind', 'forum')
+    .maybeSingle<{ id: string }>()
+  if (forum.error || !forum.data) {
+    out.push({ verb: 'anon posts', ok: false, detail: 'no #ideas forum to plant a probe post in' })
+  } else {
+    const plantedPostId = crypto.randomUUID()
+    const plantedPost = await admin.from('posts').insert({
+      id: plantedPostId,
+      channel_id: forum.data.id,
+      author_id: await ensureUser(EMAIL_A),
+      title: '__anon_probe',
+    })
+    if (plantedPost.error) {
+      out.push({
+        verb: 'anon posts',
+        ok: false,
+        detail: `could not plant a probe post: ${plantedPost.error.message}`,
+      })
+    } else {
+      const p = await anon.from('posts').select('id').limit(1)
+      const pVisible = p.data?.length ?? 0
+      const canReadPosts = !p.error && pVisible > 0
+      out.push({
+        verb: 'anon posts',
+        ok: !canReadPosts,
+        detail: canReadPosts
+          ? `${pVisible} post rows readable without a session`
+          : 'denied (with a row present, so this means denied and not empty)',
+      })
+      die('remove the planted anon probe post', (await admin
+        .from('posts')
+        .delete()
+        .eq('id', plantedPostId)).error)
+    }
+  }
+
+  die(
+    'sweep stale anon probe tags',
+    (await admin.from('tags').delete().eq('name', '__anon_probe')).error,
+  )
+  const plantedTagId = crypto.randomUUID()
+  const plantedTag = await admin
+    .from('tags')
+    .insert({ id: plantedTagId, name: '__anon_probe' })
+  if (plantedTag.error) {
+    out.push({
+      verb: 'anon tags',
+      ok: false,
+      detail: `could not plant a probe tag: ${plantedTag.error.message}`,
+    })
+  } else {
+    const t = await anon.from('tags').select('id').limit(1)
+    const tVisible = t.data?.length ?? 0
+    const canReadTags = !t.error && tVisible > 0
+    out.push({
+      verb: 'anon tags',
+      ok: !canReadTags,
+      detail: canReadTags
+        ? `${tVisible} tag rows readable without a session`
+        : 'denied (with a row present, so this means denied and not empty)',
+    })
+    die('remove the planted anon probe tag', (await admin
+      .from('tags')
+      .delete()
+      .eq('id', plantedTagId)).error)
   }
 
   // `unread_counts()` is granted to `authenticated` only (DECISIONS #18) and
