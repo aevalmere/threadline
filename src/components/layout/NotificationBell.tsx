@@ -45,6 +45,9 @@ export function NotificationBell() {
     const target = targets.get(n.entity_id)
     if (target?.channel_id) {
       navigate(`/channels/${target.channel_id}?m=${target.id}`)
+    } else if (target?.post_id) {
+      // A forum comment — exactly one parent is ever set (SPEC §1.3).
+      navigate(`/posts/${target.post_id}?m=${target.id}`)
     }
   }
 

@@ -25,6 +25,8 @@ export interface NotificationTarget {
   id: number
   body: string
   channel_id: string | null
+  /** Set instead of channel_id when the message is a forum comment (SPEC §1.3). */
+  post_id: string | null
   deleted_at: string | null
 }
 
@@ -78,7 +80,7 @@ export function useNotifications() {
 
     const { data } = await supabase
       .from('messages')
-      .select('id, body, channel_id, deleted_at')
+      .select('id, body, channel_id, post_id, deleted_at')
       .in('id', wanted)
     if (!data) return
 
