@@ -179,7 +179,9 @@ P3 also adds the two deferred FKs: `messages.post_id` → `posts(id)` **on delet
 `post_tags(post_id uuid → posts on delete cascade, tag_id uuid → tags on delete cascade, primary key (post_id, tag_id))` — index on `(tag_id)` for "posts with this tag".
 
 #### `collections` / `pages` — P4
-`collections(id uuid pk, name text not null, parent_id uuid null → collections(id) on delete cascade)`
+`collections(id uuid pk, name text not null, parent_id uuid null → collections(id) on delete cascade, created_at timestamptz not null default now())`
+
+Deleting a collection cascades its child collections but only **un-files** its pages — their FK is `set null`, so no document is ever destroyed by tree pruning.
 
 | `pages` column | Type | Notes |
 |---|---|---|
@@ -187,10 +189,11 @@ P3 also adds the two deferred FKs: `messages.post_id` → `posts(id)` **on delet
 | `collection_id` | `uuid` | → `collections(id)` on delete set null |
 | `title` | `text not null` | |
 | `body_rich` | `jsonb` | BlockNote document |
-| `created_by` | `uuid` | → `profiles(id)` |
-| `updated_at` | `timestamptz not null default now()` | |
-| `editing_user_id` | `uuid` | → `profiles(id)`; soft lock (§1.7) |
+| `created_by` | `uuid` | → `profiles(id)` on delete set null — the document outlives its author; a null creator unlocks the delete affordance for everyone (DECISIONS #26's shape) |
+| `updated_at` | `timestamptz not null default now()` | set by the client on **content saves only** — heartbeats never touch it |
+| `editing_user_id` | `uuid` | → `profiles(id)` on delete set null; soft lock (§1.7) |
 | `editing_heartbeat_at` | `timestamptz` | stale after ~45s |
+| `created_at` | `timestamptz not null default now()` | |
 
 #### `tasks` — P2
 | Column | Type | Notes |
