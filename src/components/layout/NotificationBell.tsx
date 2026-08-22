@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { BellIcon, XIcon } from 'lucide-react'
 
 import { AuthorAvatar } from '@/components/layout/AuthorAvatar'
@@ -14,6 +14,7 @@ const TOAST_MS = 6000
 
 export function NotificationBell() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { nameFor, avatarUrlFor } = useProfiles()
   const { channels } = useChannels()
   const { items, targets, unread, latest, clearLatest, markRead, markAllRead } =
@@ -22,6 +23,43 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false)
   const [toasts, setToasts] = useState<Notification[]>([])
   const panel = useRef<HTMLDivElement>(null)
+  // Bumped when the tab becomes visible again, so seen-marking re-runs.
+  const [seenTick, setSeenTick] = useState(0)
+  useEffect(() => {
+    const onVis = () => setSeenTick((t) => t + 1)
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [])
+
+  /** The channel or post the user is looking at right now, if any. */
+  function openRoom(): { kind: 'channels' | 'posts'; id: string } | null {
+    const match = location.pathname.match(/^\/(channels|posts)\/([^/]+)$/)
+    return match ? { kind: match[1] as 'channels' | 'posts', id: match[2] } : null
+  }
+
+  // SEEING the message clears its bell — being in the target's channel or
+  // post with the tab visible marks it read; opening the panel does not
+  // (Ethan's call, beta round 2).
+  useEffect(() => {
+    if (document.hidden) return
+    const room = openRoom()
+    if (room === null) return
+    for (const n of items) {
+      if (n.read_at !== null || n.entity_type !== 'message') continue
+      const target = targets.get(n.entity_id)
+      if (!target) continue
+      const inRoom =
+        room.kind === 'channels'
+          ? target.channel_id === room.id
+          : target.post_id === room.id
+      if (inRoom) {
+        void markRead(n.id)
+        setToasts((t) => t.filter((x) => x.id !== n.id))
+      }
+    }
+    // openRoom is derived from location.pathname, which is listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, items, targets, markRead, seenTick])
 
   const channelName = (id: string | null | undefined) =>
     channels?.find((c) => c.id === id)?.name
@@ -70,6 +108,18 @@ export function NotificationBell() {
   useEffect(() => {
     if (!latest) return
     clearLatest()
+
+    // Already looking at the room it happened in: no surface at all — the
+    // seen-marking effect reads it silently.
+    const room = openRoom()
+    if (!document.hidden && room !== null && latest.entity_type === 'message') {
+      const target = targets.get(latest.entity_id)
+      const inRoom =
+        room.kind === 'channels'
+          ? target?.channel_id === room.id
+          : target?.post_id === room.id
+      if (inRoom) return
+    }
 
     if (document.hidden && typeof Notification !== 'undefined') {
       if (Notification.permission === 'granted') {
