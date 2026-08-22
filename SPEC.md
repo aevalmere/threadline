@@ -240,18 +240,19 @@ Four content tables carry a generated `tsvector` column plus a GIN index:
 | `pages` | `title` (weight A) + `body_rich` flattened to text (weight B) |
 | `tasks` | `title` (weight A) + `description_rich` flattened to text (weight B) |
 
-BlockNote stores `jsonb`; the flattening uses `jsonb_to_tsvector('english', body_rich, '["string"]')`, which is immutable and therefore legal in a generated column.
+BlockNote stores `jsonb`; the flattening extracts **only human text** first — `jsonb_to_tsvector('english', jsonb_path_query_array(coalesce(body_rich, '[]'), '$.**."text"'), '["string"]')` — because BlockNote keeps all readable text under `"text"` keys while scaffolding (`"paragraph"`, style names, block ids, image paths) lives under other keys. A bare `jsonb_to_tsvector` over the whole document would index the scaffolding, making tokens like "paragraph" match every document. Both functions are immutable and therefore legal in a generated column. The `coalesce` matters: `body_rich` is nullable, and a null would poison the whole concatenated vector. *(Amended at P5 — the original sketch flattened the whole document; DECISIONS #25 flagged the choice, DECISIONS #28 records it.)*
 
 One function, `search_all(q text)`, UNION ALLs across the four:
 
 ```sql
 create or replace function public.search_all(q text)
-returns table (entity_type text, entity_id text, title text, snippet text, rank real)
-language sql stable
+returns table (entity_type text, entity_id text, parent_type text, parent_id text,
+               title text, snippet text, rank real)
+language sql stable security invoker
 as $$ … union all … order by rank desc limit 50 $$;
 ```
 
-`entity_id` is `text` because `messages.id` is bigint and the rest are uuid (§2.1). Query parsing uses `websearch_to_tsquery('english', q)`. Snippets come from `ts_headline`.
+`entity_id` is `text` because `messages.id` is bigint and the rest are uuid (§2.1). `parent_type`/`parent_id` exist for message hits — `('channel', channel_id)` or `('post', post_id)`, null for the other entity types — because jump-to-entity needs the parent to build `/channels/<id>?m=` vs `/posts/<id>?m=` without a per-click resolve. A message hit's `title` is its channel name or post title; tombstoned messages are excluded. Query parsing uses `websearch_to_tsquery('english', q)`. Snippets come from `ts_headline` (rich bodies re-flatten through `flatten_rich_text()` for the snippet source). Granted to `authenticated` only, `anon` revoked explicitly — the DECISIONS #18 lesson.
 
 **No external search service.** If FTS slips, the fallback is `ILIKE` now and FTS in September — not Meilisearch.
 

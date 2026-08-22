@@ -227,6 +227,34 @@ export function linkForPost(taskId: string, postId: string) {
 }
 
 /**
+ * The notifications row a task write inserts when it hands the task to
+ * someone — SPEC §1.9's `assignment` kind, client-written like mentions
+ * (DECISIONS #15). Null when there is nobody to tell: no assignee, or the
+ * actor assigned themself (nobody needs a bell about their own action —
+ * the same rule `notify`'s claimed-set enforces for mentions).
+ */
+export function assignmentNoticeRow(opts: {
+  taskId: string
+  assigneeId: string | null
+  actorId: string
+}): {
+  user_id: string
+  kind: 'assignment'
+  actor_id: string
+  entity_type: 'task'
+  entity_id: string
+} | null {
+  if (opts.assigneeId === null || opts.assigneeId === opts.actorId) return null
+  return {
+    user_id: opts.assigneeId,
+    kind: 'assignment',
+    actor_id: opts.actorId,
+    entity_type: 'task',
+    entity_id: opts.taskId,
+  }
+}
+
+/**
  * Patch for a status change. `completed_at` is stamped on entering `done` and
  * cleared on leaving it, so "done last Tuesday" survives a refresh but a
  * reopened task does not claim a completion date.

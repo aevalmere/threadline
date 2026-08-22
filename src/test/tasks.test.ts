@@ -4,6 +4,7 @@ import {
   POSITION_STEP,
   TITLE_MAX,
   appendPosition,
+  assignmentNoticeRow,
   fieldsFromTask,
   groupByStatus,
   isOverdue,
@@ -338,5 +339,27 @@ describe('rich text round-trip', () => {
     expect(rich).toEqual([
       { type: 'paragraph', content: [{ type: 'text', text: 'hello', styles: {} }] },
     ])
+  })
+})
+
+describe('assignmentNoticeRow', () => {
+  const TASK = 't0000000-0000-4000-8000-000000000009'
+
+  it('builds the bell row when the task is handed to someone else', () => {
+    expect(assignmentNoticeRow({ taskId: TASK, assigneeId: BOB, actorId: ALICE })).toEqual({
+      user_id: BOB,
+      kind: 'assignment',
+      actor_id: ALICE,
+      entity_type: 'task',
+      entity_id: TASK,
+    })
+  })
+
+  it('is null on self-assignment — nobody needs a bell about their own action', () => {
+    expect(assignmentNoticeRow({ taskId: TASK, assigneeId: ALICE, actorId: ALICE })).toBeNull()
+  })
+
+  it('is null on unassignment', () => {
+    expect(assignmentNoticeRow({ taskId: TASK, assigneeId: null, actorId: ALICE })).toBeNull()
   })
 })

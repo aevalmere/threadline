@@ -14,11 +14,13 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
+import { useAuth } from '@/lib/auth-context'
 import { richFromPlain } from '@/lib/rich'
 import { supabase } from '@/lib/supabase'
 import {
   TASK_COLUMNS,
   appendPosition,
+  assignmentNoticeRow,
   linkForPost,
   linkForTask,
   taskFromMessagePayload,
@@ -30,10 +32,25 @@ import {
   type TaskStatus,
 } from '@/lib/tasks'
 
+/**
+ * Insert the assignment bell row after a task write settled (SPEC §1.9).
+ * Throws the link-failure-shaped error: the task write stands either way.
+ */
+async function insertAssignmentNotice(
+  notice: ReturnType<typeof assignmentNoticeRow>,
+): Promise<void> {
+  if (notice === null) return
+  const { error } = await supabase.from('notifications').insert(notice)
+  if (error) {
+    throw new Error(`Task saved, but the assignee was not notified: ${error.message}`)
+  }
+}
+
 export function useTasks() {
   /** Null until the first fetch settles — the loading state. */
   const [tasks, setTasks] = useState<Task[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const { authorId } = useAuth()
 
   const refresh = useCallback(async () => {
     const { data, error: err } = await supabase
@@ -61,22 +78,45 @@ export function useTasks() {
     if (err || !data) throw new Error(err?.message ?? 'Could not create the task.')
     const task = data as Task
     setTasks((cur) => (cur ? [...cur, task] : cur))
+    await insertAssignmentNotice(
+      assignmentNoticeRow({
+        taskId: task.id,
+        assigneeId: task.assignee_id,
+        actorId: payload.created_by,
+      }),
+    )
     return task
   }, [])
 
-  const updateTask = useCallback(async (id: string, patch: Partial<Task>): Promise<void> => {
-    const { data, error: err } = await supabase
-      .from('tasks')
-      .update(patch)
-      .eq('id', id)
-      .select('id')
-    // Judged on rows, not error absence (DECISIONS #5): a write RLS silently
-    // swallowed returns success with zero rows.
-    if (err || (data?.length ?? 0) !== 1) {
-      throw new Error(err?.message ?? 'The update did not take effect.')
-    }
-    setTasks((cur) => cur?.map((t) => (t.id === id ? { ...t, ...patch } : t)) ?? cur)
-  }, [])
+  const updateTask = useCallback(
+    async (id: string, patch: Partial<Task>): Promise<void> => {
+      // Captured before the write: the notice fires only on an actual change
+      // of assignee — patchFromFields always carries assignee_id, changed or
+      // not, so the patch alone cannot tell.
+      const previousAssignee = tasks?.find((t) => t.id === id)?.assignee_id ?? null
+      const { data, error: err } = await supabase
+        .from('tasks')
+        .update(patch)
+        .eq('id', id)
+        .select('id')
+      // Judged on rows, not error absence (DECISIONS #5): a write RLS silently
+      // swallowed returns success with zero rows.
+      if (err || (data?.length ?? 0) !== 1) {
+        throw new Error(err?.message ?? 'The update did not take effect.')
+      }
+      setTasks((cur) => cur?.map((t) => (t.id === id ? { ...t, ...patch } : t)) ?? cur)
+      if (
+        patch.assignee_id !== undefined &&
+        patch.assignee_id !== previousAssignee &&
+        authorId !== null
+      ) {
+        await insertAssignmentNotice(
+          assignmentNoticeRow({ taskId: id, assigneeId: patch.assignee_id, actorId: authorId }),
+        )
+      }
+    },
+    [tasks, authorId],
+  )
 
   const deleteTask = useCallback(async (id: string): Promise<void> => {
     // Links integrity is app-enforced (SPEC §1.8) — the database has no FK to
@@ -176,6 +216,14 @@ export async function createTaskFromMessage(
   if (link.error) {
     throw new Error(`Task created, but its source link failed: ${link.error.message}`)
   }
+
+  await insertAssignmentNotice(
+    assignmentNoticeRow({
+      taskId: ins.data.id,
+      assigneeId: opts.assigneeId,
+      actorId: opts.createdBy,
+    }),
+  )
 }
 
 /**
@@ -222,4 +270,12 @@ export async function createTaskFromPost(
   if (link.error) {
     throw new Error(`Task created, but its source link failed: ${link.error.message}`)
   }
+
+  await insertAssignmentNotice(
+    assignmentNoticeRow({
+      taskId: ins.data.id,
+      assigneeId: opts.assigneeId,
+      actorId: opts.createdBy,
+    }),
+  )
 }

@@ -42,6 +42,12 @@ export function NotificationBell() {
     void markRead(n.id)
     setOpen(false)
     setToasts((t) => t.filter((x) => x.id !== n.id))
+    // An assignment points at a task, not a message — no target row loads for
+    // it, so this branch must come before the message lookup (P5).
+    if (n.entity_type === 'task') {
+      navigate(`/tasks?t=${n.entity_id}`)
+      return
+    }
     const target = targets.get(n.entity_id)
     if (target?.channel_id) {
       navigate(`/channels/${target.channel_id}?m=${target.id}`)
