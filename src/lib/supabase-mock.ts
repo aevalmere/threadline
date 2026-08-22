@@ -41,8 +41,9 @@
  * v4 added the `notifications` table for the bell.
  * v5 added the `tasks` and `links` tables for the P2 kanban.
  * v6 added `posts`/`tags`/`post_tags` and a forum-kind channel for P3.
+ * v7 added `collections`/`pages` and a starter collection for P4.
  */
-const STORAGE_KEY = 'threadline.mock.v6'
+const STORAGE_KEY = 'threadline.mock.v7'
 
 type Row = Record<string, unknown>
 type Tables = Record<string, Row[]>
@@ -142,6 +143,12 @@ function seed(): Tables {
     posts: [],
     tags: [],
     post_tags: [],
+    // A collection so the docs tree has something to render offline; pages
+    // are one click away and carry the signed-in author, so none is seeded.
+    collections: [
+      { id: '20000000-0000-4000-8000-000000000001', name: 'Handbook', parent_id: null, created_at: now },
+    ],
+    pages: [],
   }
 }
 
@@ -201,6 +208,14 @@ const COLUMN_DEFAULTS: Record<string, Row> = {
   },
   posts: { body_rich: null },
   tags: { color: null },
+  collections: { parent_id: null },
+  pages: {
+    collection_id: null,
+    body_rich: null,
+    created_by: null,
+    editing_user_id: null,
+    editing_heartbeat_at: null,
+  },
   // `links` and `post_tags` have no nullable payload columns (SPEC §2.3) —
   // nothing to default.
 }
@@ -374,6 +389,13 @@ class Query implements PromiseLike<{ data: unknown; error: null | { message: str
             : { id: nextId(this.table), created_at: new Date().toISOString() }),
           ...(COLUMN_DEFAULTS[this.table] ?? {}),
           ...row,
+        }
+        // pages.updated_at is `not null default now()` and the insert payload
+        // never carries it (only content saves write it, SPEC §2.3) — without
+        // this a mocked page has `updated_at === undefined`, a state Postgres
+        // cannot produce.
+        if (this.table === 'pages' && created.updated_at === undefined) {
+          created.updated_at = created.created_at
         }
         // The messages_one_parent CHECK: exactly one of channel_id / post_id
         // (SPEC §1.3). Reproduced because a mock row wearing both parents —

@@ -736,3 +736,47 @@ describe('mock posts, tags, post_tags', () => {
     await mockSupabase.from('posts').delete().eq('id', postId)
   })
 })
+
+describe('mock collections, pages', () => {
+  it('defaults the nullable page columns, including the edit-lock pair', async () => {
+    const { data } = await mockSupabase
+      .from('pages')
+      .insert({ title: 'defaults probe' })
+      .select('*')
+      .single()
+    const row = data as Record<string, unknown>
+    for (const col of [
+      'collection_id',
+      'body_rich',
+      'created_by',
+      'editing_user_id',
+      'editing_heartbeat_at',
+    ]) {
+      expect(row).toHaveProperty(col)
+      expect(row[col]).toBeNull()
+    }
+    await mockSupabase.from('pages').delete().eq('id', row.id as string)
+  })
+
+  it('stamps updated_at on insert — not null default now(), like Postgres', async () => {
+    const { data } = await mockSupabase
+      .from('pages')
+      .insert({ title: 'stamp probe' })
+      .select('*')
+      .single()
+    const row = data as Record<string, unknown>
+    expect(row.updated_at).toBe(row.created_at)
+    await mockSupabase.from('pages').delete().eq('id', row.id as string)
+  })
+
+  it('defaults collections.parent_id to null — a root collection', async () => {
+    const { data } = await mockSupabase
+      .from('collections')
+      .insert({ name: 'roots probe' })
+      .select('*')
+      .single()
+    const row = data as Record<string, unknown>
+    expect(row.parent_id).toBeNull()
+    await mockSupabase.from('collections').delete().eq('id', row.id as string)
+  })
+})
