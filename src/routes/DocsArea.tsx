@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
 import {
@@ -21,7 +21,13 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { flattenTree, type Collection, type PageMeta, type TreeRow } from '@/lib/pages'
+import {
+  EDIT_LOCK_POLL_MS,
+  flattenTree,
+  type Collection,
+  type PageMeta,
+  type TreeRow,
+} from '@/lib/pages'
 import { useCollections, usePages } from '@/lib/useDocs'
 import PageView from '@/routes/PageView'
 
@@ -40,6 +46,25 @@ export default function DocsArea() {
   const location = useLocation()
   const navigate = useNavigate()
   const atIndex = location.pathname === '/docs'
+
+  // The tree follows other people's work: pages and collections are
+  // deliberately not in the realtime publication (DECISIONS #27), so the
+  // lists poll on the edit-lock cadence and refetch when the window regains
+  // focus. Own mutations still refresh instantly.
+  const refreshCollections = collectionsState.refresh
+  const refreshPages = pagesState.refresh
+  useEffect(() => {
+    const tick = () => {
+      void refreshCollections()
+      void refreshPages()
+    }
+    const interval = setInterval(tick, EDIT_LOCK_POLL_MS)
+    window.addEventListener('focus', tick)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', tick)
+    }
+  }, [refreshCollections, refreshPages])
 
   return (
     <div className="flex h-full min-h-0">

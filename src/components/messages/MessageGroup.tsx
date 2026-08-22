@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { Link as RouterLink } from 'react-router-dom'
 
 import {
   CheckIcon,
@@ -16,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import type { Attachment } from '@/lib/attachments'
 import { useAuth } from '@/lib/auth-context'
 import { splitMentions } from '@/lib/mentions'
+import { internalPath, splitUrls } from '@/lib/urls'
 import { useProfiles } from '@/lib/profiles-context'
 import type { Message } from '@/lib/useMessages'
 import { cn } from '@/lib/utils'
@@ -292,7 +294,29 @@ function MessageBody({ message }: { message: Message }) {
             @{byId.get(seg.userId)?.display_name ?? seg.username}
           </span>
         ) : (
-          <span key={i}>{seg.text}</span>
+          // Pasted URLs become links: ours navigate in the SPA (so a
+          // Copy-link lands on the exact message), external ones open a tab.
+          <span key={i}>
+            {splitUrls(seg.text).map((part, j) => {
+              if (part.kind === 'text') return <span key={j}>{part.text}</span>
+              const path = internalPath(part.text, window.location.origin)
+              return path !== null ? (
+                <RouterLink key={j} to={path} className="text-primary break-all hover:underline">
+                  {part.text}
+                </RouterLink>
+              ) : (
+                <a
+                  key={j}
+                  href={part.text}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-primary break-all hover:underline"
+                >
+                  {part.text}
+                </a>
+              )
+            })}
+          </span>
         ),
       )}
       {message.edited_at && (
