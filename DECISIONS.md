@@ -1512,3 +1512,48 @@ perfect? it also doesnt have usernames"*), one migration, FAIL→fix→PASS:
 - SPEC §1.10 and §3 amended in the same commit; seed gains four v2 probes
   (file-as-owner, dedup-to-one, partial title, person) — 86 probes, all
   green against live after push.
+
+## #30 — 2026-08-22 — graphify: a code knowledge graph for the assistant, on Ethan's ask
+
+**What went in.** `graphifyy` 0.9.48 (PyPI, double-y; the command is
+`graphify`) via `uv tool install "graphifyy[sql]"` — the `[sql]` extra so
+the 18 migrations parse; without it they contributed nothing. It is a dev
+tool outside the app: no app dependency, nothing in the locked stack moves.
+Three pieces, each undone by its own `uninstall`:
+
+- **Skill** — `graphify install` wrote `~/.claude/skills/graphify/` and a
+  two-line `~/.claude/CLAUDE.md` (user-global, not this repo). `/graphify .`
+  is the entry point in Claude Code; on Windows PowerShell it is `graphify .`.
+- **Hook** — `graphify hook install` wrote `.git/hooks/post-commit` and
+  `post-checkout` (local, not committed): a *detached* code-only rebuild
+  after each commit, pinned to the uv-tool Python, logging to
+  `~/.cache/graphify-rebuild.log`. It skips commits that touch only
+  `graphify-out/`, skips mid-rebase/merge, and honours `GRAPHIFY_SKIP_HOOK=1`.
+  It also registered `merge.graphify` (union-merge of `graph.json`) in local
+  git config and wrote `.gitattributes`, which **is** committed. Teammates
+  run `graphify hook install` once to get their own hook + driver.
+- **Graph** — `graphify extract . --code-only` (tree-sitter AST, zero API
+  calls): 759 nodes · 1825 edges · 63 communities, built from `ca9d3ec`.
+  Committed: `graph.json`, `GRAPH_REPORT.md`, `manifest.json`,
+  `.graphify_analysis.json` — none carries a machine path. Ignored:
+  `graph.html` (700 KB viewer, regenerable), `cache/`, `cost.json`, and
+  `.graphify_root` (absolute path; a teammate's hook would rebuild the
+  wrong directory if it shipped).
+
+**What was deliberately not run.** Both LLM passes — community naming and
+the docs/markdown extraction — are token spend, so they wait on Ethan
+(his call on spend): `/graphify .` in a fresh session does both with the
+session model; `graphify label .` (one batched call) names communities
+only. Until then `GRAPH_REPORT.md` lists "Community N" placeholders; the
+query surface (`graphify query|path|explain|god-nodes`) is unaffected.
+Also not run: `graphify claude install`, which would add a PreToolUse hook
+and a CLAUDE.md section nudging every session to query the graph before
+grepping — not asked for, and this file's workflow loop stays as written.
+
+**How it behaves day to day.** The committed graph lags one commit: the
+rebuild fires *after* a commit and lands in the next one (a commit that only
+carries `graphify-out/` does not re-trigger). `git status` showing a
+modified `graph.json` after a code commit is the hook working, not drift.
+Known gap: `src/test/safe-next.test.ts` has a character at line 49 that
+tree-sitter-typescript rejects, so that one file indexes without symbols —
+the character is the test's point; the source is untouched.
