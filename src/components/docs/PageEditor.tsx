@@ -1,5 +1,7 @@
-import '@blocknote/core/fonts/inter.css'
+// No inter.css import: the editor inherits the app font (editor.css), so
+// the document reads as part of the site and the font files never download.
 import '@blocknote/shadcn/style.css'
+import './editor.css'
 
 import { useEffect } from 'react'
 
@@ -45,5 +47,7 @@ export default function PageEditor({
     onReady(editor)
   }, [editor, onReady])
 
-  return <BlockNoteView editor={editor} onChange={onChange} />
+  // theme pinned: the site is light-only, and BlockNote's default follows
+  // the OS — a dark editor inside a light app was the "embed" feel.
+  return <BlockNoteView editor={editor} theme="light" onChange={onChange} />
 }

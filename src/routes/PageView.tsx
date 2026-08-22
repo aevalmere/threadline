@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 
 import type { BlockNoteEditor } from '@blocknote/core'
 import { Link2Icon, PencilLineIcon, Trash2Icon } from 'lucide-react'
@@ -242,28 +242,56 @@ function PageSurface({
   const editingUserId = editingBanner(page, authorId, Date.now())
 
   return (
-    <div className="mx-auto max-w-3xl space-y-3 p-6">
-      {editingUserId !== null && (
-        <div
-          role="status"
-          className="bg-muted text-muted-foreground flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+    <div>
+      {/* Slim sticky bar: the page's place in the tree on the left (the
+          collection segment IS the mover), controls on the right. */}
+      <div className="bg-background sticky top-0 z-10 flex items-center gap-2 border-b px-4 py-1.5">
+        <nav
+          aria-label="Breadcrumb"
+          className="text-muted-foreground flex min-w-0 items-center gap-1 text-xs"
         >
-          <PencilLineIcon className="size-4 shrink-0" />
-          {nameFor(editingUserId)} is editing this page
-        </div>
-      )}
-      <div className="flex items-center gap-3">
-        <input
-          value={title}
-          onChange={(e) => {
-            setTitle(e.target.value)
-            titleRef.current = e.target.value
-            markDirty()
-          }}
-          aria-label="Page title"
-          placeholder="Untitled"
-          className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-2xl font-semibold tracking-tight outline-none"
-        />
+          <RouterLink to="/docs" className="hover:text-foreground shrink-0">
+            Docs
+          </RouterLink>
+          <span aria-hidden>/</span>
+          <select
+            aria-label="Collection"
+            value={collectionId ?? ''}
+            onChange={(e) => {
+              const next = e.target.value === '' ? null : e.target.value
+              const previous = collectionId
+              setCollectionId(next)
+              setMoveError(null)
+              onMove(page.id, next).catch((err: unknown) => {
+                setCollectionId(previous)
+                setMoveError(err instanceof Error ? err.message : 'Could not move the page.')
+              })
+            }}
+            className="hover:text-foreground max-w-40 shrink-0 cursor-pointer appearance-none truncate bg-transparent"
+          >
+            <option value="">Unfiled</option>
+            {flattenTree(collections).map((row) => (
+              <option key={row.collection.id} value={row.collection.id}>
+                {/* Non-breaking spaces — plain ones collapse inside <option>. */}
+                {' '.repeat(row.depth * 2)}
+                {row.collection.name}
+              </option>
+            ))}
+          </select>
+          <span aria-hidden>/</span>
+          <span className="text-foreground truncate">{title.trim() || 'Untitled'}</span>
+        </nav>
+        <div className="flex-1" />
+        {editingUserId !== null && (
+          <span
+            role="status"
+            title={`${nameFor(editingUserId)} is editing this page`}
+            className="bg-muted text-muted-foreground flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs"
+          >
+            <PencilLineIcon className="size-3" />
+            {nameFor(editingUserId)}
+          </span>
+        )}
         <span
           className={`shrink-0 text-xs ${saveState === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}
           role={saveState === 'error' ? 'alert' : undefined}
@@ -271,19 +299,21 @@ function PageSurface({
           {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save failed' : 'Saved'}
         </span>
         <Button
-          size="sm"
+          size="icon"
           variant="ghost"
+          className="size-6"
           aria-label="Link to a task or page"
           title="Link to a task or page"
           onClick={() => setPicking(true)}
         >
-          <Link2Icon />
+          <Link2Icon className="size-3.5" />
         </Button>
         {canDelete &&
           (confirmingDelete ? (
             <Button
               size="sm"
               variant="destructive"
+              className="h-6"
               onBlur={() => setConfirmingDelete(false)}
               onClick={() => {
                 void (async () => {
@@ -303,74 +333,74 @@ function PageSurface({
             </Button>
           ) : (
             <Button
-              size="sm"
+              size="icon"
               variant="ghost"
+              className="size-6"
               aria-label="Delete page"
               title="Delete page"
               onClick={() => setConfirmingDelete(true)}
             >
-              <Trash2Icon />
+              <Trash2Icon className="size-3.5" />
             </Button>
           ))}
       </div>
 
-      <div className="flex items-center gap-2">
-        <label htmlFor="page-collection" className="text-muted-foreground text-xs">
-          In
-        </label>
-        <select
-          id="page-collection"
-          value={collectionId ?? ''}
+
+      {(moveError !== null ||
+        (saveState === 'error' && saveError !== null) ||
+        deleteError !== null) && (
+        <div className="space-y-1 px-4 pt-2">
+          {moveError && (
+            <p role="alert" className="text-destructive text-xs">
+              {moveError}
+            </p>
+          )}
+          {saveState === 'error' && saveError && (
+            <p className="text-destructive text-xs">
+              {saveError} Edits are kept — typing retries.
+            </p>
+          )}
+          {deleteError && (
+            <p role="alert" className="text-destructive text-xs">
+              {deleteError}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* The document: title and body share one container edge and one type
+          system — the editor's own gutter, font, and background are turned
+          off in editor.css, so this reads as one page instead of an embed.
+          The onClick is delegation for anchors the editor renders; links
+          stay keyboard-reachable through the editor. */}
+      <div className="mx-auto max-w-3xl px-10 pt-10 pb-16" onClick={onEditorClick}>
+        <input
+          value={title}
           onChange={(e) => {
-            const next = e.target.value === '' ? null : e.target.value
-            const previous = collectionId
-            setCollectionId(next)
-            setMoveError(null)
-            onMove(page.id, next).catch((err: unknown) => {
-              setCollectionId(previous)
-              setMoveError(err instanceof Error ? err.message : 'Could not move the page.')
-            })
+            setTitle(e.target.value)
+            titleRef.current = e.target.value
+            markDirty()
           }}
-          className="border-input bg-background rounded-md border px-2 py-1 text-xs"
-        >
-          <option value="">Unfiled</option>
-          {flattenTree(collections).map((row) => (
-            <option key={row.collection.id} value={row.collection.id}>
-              {' '.repeat(row.depth * 2)}
-              {row.collection.name}
-            </option>
-          ))}
-        </select>
-        {moveError && (
-          <p role="alert" className="text-destructive text-xs">
-            {moveError}
-          </p>
-        )}
-      </div>
-
-      {saveState === 'error' && saveError && (
-        <p className="text-destructive text-xs">{saveError} Edits are kept — typing retries.</p>
-      )}
-      {deleteError && (
-        <p role="alert" className="text-destructive text-xs">
-          {deleteError}
-        </p>
-      )}
-
-      {/* -mx-* pulls BlockNote's gutter back so its content edge lines up
-          with the title input above. The onClick is delegation for anchors
-          the editor renders — the links themselves stay keyboard-reachable
-          through the editor. */}
-      <div className="-mx-[54px]" onClick={onEditorClick}>
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              editorRef.current?.focus()
+            }
+          }}
+          aria-label="Page title"
+          placeholder="Untitled"
+          className="placeholder:text-muted-foreground/50 mb-4 w-full bg-transparent text-4xl font-bold tracking-tight outline-none"
+        />
         <PageEditor
           pageId={page.id}
           initial={page.body_rich}
           onReady={onEditorReady}
           onChange={markDirty}
         />
+        <div className="mt-12">
+          <LinkedItems targetType="page" targetId={page.id} />
+        </div>
       </div>
-
-      <LinkedItems targetType="page" targetId={page.id} />
 
       <LinkPicker
         open={picking}

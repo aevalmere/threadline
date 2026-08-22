@@ -1,0 +1,10 @@
+/*
+ * Make BlockNote part of the page, not an embed: the site's own font, the
+ * page's own background, and the shared container edge instead of the
+ * editor's built-in 54px gutter (the title above shares that edge).
+ */
+.bn-editor {
+  font-family: inherit;
+  background-color: transparent;
+  padding-inline: 0;
+}
