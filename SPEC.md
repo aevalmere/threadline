@@ -146,7 +146,7 @@ PK `(channel_id, user_id)`. Index on `(user_id)`.
 |---|---|---|
 | `id` | `bigint generated always as identity` PK | monotonic — see §2.1 |
 | `channel_id` | `uuid` | → `channels(id)` on delete cascade |
-| `post_id` | `uuid` | FK added in **P3** when `posts` exists |
+| `post_id` | `uuid` | → `posts(id)` on delete cascade (FK added in **P3**) |
 | `author_id` | `uuid not null` | → `profiles(id)` on delete cascade |
 | `thread_root_id` | `bigint` | → `messages(id)` on delete cascade |
 | `body` | `text not null` | |
@@ -164,17 +164,19 @@ PK `(channel_id, user_id)`. Index on `(user_id)`.
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `uuid` PK | |
-| `channel_id` | `uuid not null` | → `channels(id)`; channel must be `kind='forum'` (app-enforced) |
-| `author_id` | `uuid not null` | → `profiles(id)` |
+| `channel_id` | `uuid not null` | → `channels(id)` on delete cascade; channel must be `kind='forum'` (app-enforced) |
+| `author_id` | `uuid not null` | → `profiles(id)` on delete cascade |
 | `title` | `text not null` | |
 | `body_rich` | `jsonb` | BlockNote document |
 | `created_at` | `timestamptz not null default now()` | |
 
-P3 also adds the deferred `messages.post_id` FK.
+Index on `(channel_id, created_at desc)` — the forum's list query.
+
+P3 also adds the two deferred FKs: `messages.post_id` → `posts(id)` **on delete cascade** (deleting a post deletes its comment rows outright — no surface remains where a tombstone could render, so they go the way a deleted channel's messages do), and `tasks.source_post_id` → `posts(id)` **on delete set null** (orphans the provenance, not the task).
 
 #### `tags` / `post_tags` — P3
 `tags(id uuid pk, name text unique not null, color text)`
-`post_tags(post_id uuid → posts on delete cascade, tag_id uuid → tags on delete cascade, primary key (post_id, tag_id))`
+`post_tags(post_id uuid → posts on delete cascade, tag_id uuid → tags on delete cascade, primary key (post_id, tag_id))` — index on `(tag_id)` for "posts with this tag".
 
 #### `collections` / `pages` — P4
 `collections(id uuid pk, name text not null, parent_id uuid null → collections(id) on delete cascade)`
