@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { HashIcon, PlusIcon } from 'lucide-react'
+import { HashIcon, NewspaperIcon, PlusIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -101,7 +101,11 @@ function ChannelGroup({
         <ul className="divide-y rounded-md border">
           {channels.map((c) => (
             <li key={c.id} className="flex items-center gap-3 px-3 py-2.5">
-              <HashIcon className="text-muted-foreground size-4 shrink-0" />
+              {c.kind === 'forum' ? (
+                <NewspaperIcon className="text-muted-foreground size-4 shrink-0" />
+              ) : (
+                <HashIcon className="text-muted-foreground size-4 shrink-0" />
+              )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{c.name}</p>
                 {c.topic && (

@@ -88,6 +88,11 @@ function MessageRow({
 }) {
   const deleted = message.deleted_at != null
   const [editing, setEditing] = useState(false)
+  // Edit and Delete are the author's; Reply and Create task are everyone's.
+  // A UI affordance, not a wall — the database deliberately stays one
+  // trusted workspace (Non-negotiable 2, DECISIONS #26).
+  const { authorId } = useAuth()
+  const mine = message.author_id === authorId
 
   return (
     <div
@@ -145,24 +150,28 @@ function MessageRow({
             <MessageSquareIcon className="size-3.5" />
             <span className="sr-only">Reply</span>
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7"
-            onClick={() => setEditing(true)}
-          >
-            <PencilIcon className="size-3.5" />
-            <span className="sr-only">Edit message</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-destructive hover:text-destructive size-7"
-            onClick={() => actions.onRequestDelete(message)}
-          >
-            <Trash2Icon className="size-3.5" />
-            <span className="sr-only">Delete message</span>
-          </Button>
+          {mine && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={() => setEditing(true)}
+            >
+              <PencilIcon className="size-3.5" />
+              <span className="sr-only">Edit message</span>
+            </Button>
+          )}
+          {mine && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-destructive hover:text-destructive size-7"
+              onClick={() => actions.onRequestDelete(message)}
+            >
+              <Trash2Icon className="size-3.5" />
+              <span className="sr-only">Delete message</span>
+            </Button>
+          )}
         </div>
       )}
     </div>

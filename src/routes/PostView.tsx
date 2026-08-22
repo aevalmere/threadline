@@ -105,6 +105,9 @@ export default function PostView() {
   }
 
   const canWrite = authorId !== null && post !== null
+  // Editing and deleting the post are the author's; commenting and
+  // create-task are everyone's. UI-level, not a wall (DECISIONS #26).
+  const isPostAuthor = post !== null && post.author_id === authorId
 
   const signedUrlFor = useSignedUrls(
     [...attachmentsByMessage.values()].flat().map((a) => a.storage_path),
@@ -166,9 +169,20 @@ export default function PostView() {
     if (!el) return
     el.scrollIntoView({ block: 'center' })
     el.classList.add('bg-primary/10')
+    // Images above the target finish loading after the first scroll and push
+    // the layout, carrying the view away from the flashed message — so the
+    // center is re-asserted for the flash's lifetime. A scroll gesture of the
+    // user's own cancels it immediately; the jump must never fight them.
+    const reassert = setInterval(() => el.scrollIntoView({ block: 'center' }), 300)
+    const cancel = () => clearInterval(reassert)
+    window.addEventListener('wheel', cancel, { passive: true })
+    window.addEventListener('touchmove', cancel, { passive: true })
     const t = setTimeout(() => setFlash(null), 1600)
     return () => {
       clearTimeout(t)
+      clearInterval(reassert)
+      window.removeEventListener('wheel', cancel)
+      window.removeEventListener('touchmove', cancel)
       el.classList.remove('bg-primary/10')
     }
   }, [flash, openThread])
@@ -243,24 +257,28 @@ export default function PostView() {
                 <ListTodoIcon className="size-4" />
                 <span className="sr-only">Create task from post</span>
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8"
-                onClick={() => setEditing(true)}
-              >
-                <PencilIcon className="size-4" />
-                <span className="sr-only">Edit post</span>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-destructive hover:text-destructive size-8"
-                onClick={() => setDeleting(true)}
-              >
-                <Trash2Icon className="size-4" />
-                <span className="sr-only">Delete post</span>
-              </Button>
+              {isPostAuthor && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-8"
+                  onClick={() => setEditing(true)}
+                >
+                  <PencilIcon className="size-4" />
+                  <span className="sr-only">Edit post</span>
+                </Button>
+              )}
+              {isPostAuthor && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive hover:text-destructive size-8"
+                  onClick={() => setDeleting(true)}
+                >
+                  <Trash2Icon className="size-4" />
+                  <span className="sr-only">Delete post</span>
+                </Button>
+              )}
             </div>
           </div>
           <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">

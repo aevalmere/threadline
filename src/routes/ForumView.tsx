@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
-import { MessageSquareIcon, PlusIcon } from 'lucide-react'
+import { MessageSquareIcon, MessageSquareTextIcon, PlusIcon } from 'lucide-react'
 
 import { PostDialog } from '@/components/forums/PostDialog'
 import { TagChip } from '@/components/forums/TagChip'
@@ -121,8 +121,9 @@ export default function ForumView() {
             <li key={post.id} className="px-4 py-3">
               <Link
                 to={`/posts/${post.id}`}
-                className="text-sm font-medium underline-offset-4 hover:underline"
+                className="inline-flex items-center gap-2 text-sm font-medium underline-offset-4 hover:underline"
               >
+                <MessageSquareTextIcon className="text-muted-foreground size-4 shrink-0" />
                 {post.title}
               </Link>
               <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">

@@ -1,4 +1,10 @@
-import { FileTextIcon, HashIcon, KanbanIcon, MessagesSquareIcon } from 'lucide-react'
+import {
+  FileTextIcon,
+  HashIcon,
+  KanbanIcon,
+  MessagesSquareIcon,
+  NewspaperIcon,
+} from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
 import { AuthorAvatar } from '@/components/layout/AuthorAvatar'
@@ -79,7 +85,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                 className={navClass}
                 onClick={onNavigate}
               >
-                <HashIcon />
+                <NewspaperIcon />
                 <span className="min-w-0 flex-1 truncate">{c.name}</span>
               </NavLink>
             ))

@@ -289,9 +289,22 @@ export default function ChannelView() {
     el.scrollIntoView({ block: 'center' })
     el.classList.add('bg-primary/10')
 
+    // Images above the target finish loading after the first scroll and push
+    // the layout, carrying the view away from the flashed message — so the
+    // center is re-asserted for the flash's lifetime. A scroll gesture of the
+    // user's own cancels it immediately; the jump must never fight them.
+    const reassert = setInterval(() => el.scrollIntoView({ block: 'center' }), 300)
+    const cancel = () => clearInterval(reassert)
+    const list = listRef.current
+    list?.addEventListener('wheel', cancel, { passive: true })
+    list?.addEventListener('touchmove', cancel, { passive: true })
+
     const t = setTimeout(() => setFlash(null), 1600)
     return () => {
       clearTimeout(t)
+      clearInterval(reassert)
+      list?.removeEventListener('wheel', cancel)
+      list?.removeEventListener('touchmove', cancel)
       el.classList.remove('bg-primary/10')
     }
   }, [flash, openThread])

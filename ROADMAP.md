@@ -55,6 +55,8 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 > P2 does not start until item 1 passes.
 >
 > **Superseded 2026-08-18 — DECISIONS #21.** Under the batch workflow the machine-side PASS above unblocks P2 by itself. Items 1–3 stay open on Ethan's async checklist; anything item 1 surfaces is a priority-one bug, fixed before new P2 features.
+>
+> **2026-08-22 — item 1 run by Ethan: G1 clear.** His findings (edit affordances on others' messages, the jump flash scrolling away) were fixed same-day — DECISIONS #26. Items 2 and 3 remain open.
 
 ---
 
@@ -83,6 +85,8 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 > 7. **My tasks** tab lists what is assigned to you, due-date first.
 >
 > **Still open from G1 (async):** the G1 two-browser checklist · delete the `guest` auth user · confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages.
+>
+> **2026-08-22 — checklist run by Ethan: G2 clear.** His asks (task descriptions on cards, creator-only field editing) shipped same-day — DECISIONS #26.
 
 > **On G2 pass: TEAM BETA.** The user invites the whole team and daily chatter moves to Threadline. From here **real usage is the test suite** — triage team-reported bugs before new features every day. **Inviting the team is inherently Ethan's call — this handoff stays blocking (DECISIONS #21).**
 
@@ -110,7 +114,7 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 > 5. Hover a **comment** → Create task → the new card's chip jumps back to the exact comment and flashes it.
 > 6. Delete the post (trash icon → confirm). Its comments are gone with it; on the Tasks board both cards survive but their chips are gone (provenance orphaned, tasks kept — SPEC §2.3).
 >
-> **Still open from G1/G2 (async):** the G1 two-browser checklist · delete the `guest` auth user · confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages · the G2 seven-step checklist · **TEAM BETA — inviting the team stays blocking on Ethan (DECISIONS #21).**
+> **Still open (async), updated 2026-08-22:** ~~the G1 two-browser checklist~~ **clear** · ~~the G2 seven-step checklist~~ **clear** · this G3 checklist · delete the `guest` auth user · confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages · **TEAM BETA — inviting the team stays blocking on Ethan (DECISIONS #21).**
 
 ---
 

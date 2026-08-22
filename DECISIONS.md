@@ -1233,3 +1233,56 @@ column later rewrites a populated table.
 `-replace`-and-rewrite of `jump.test.ts` silently re-encoded it (BOM +
 mojibake in comments); the reviewer caught it. Source rewrites go through
 the editor tools, never `Get-Content | Set-Content`.
+
+---
+
+## #26 — 2026-08-22 — Beta feedback round 1: author-only affordances, and what they are not
+
+Ethan ran the G1 and G2 checklists — **both clear** — and filed five items.
+All five shipped the same day; checklist findings outrank features
+(DECISIONS #21).
+
+**Author-only edit/delete affordances — UI-level, deliberately.** Ethan:
+*"i can edit other ppls messages"* and *"make only op allowed to edit tasks
+and posts."* Now: a message's Edit and Delete buttons render only for its
+author (Reply and Create task stay for everyone); a post's Edit and Delete
+only for its author (commenting stays open); a task's detail fields
+(title/assignee/due/description) and Delete lock for everyone but its
+creator.
+
+Three boundaries, stated so nobody mistakes the shape:
+- **Task status stays open to the whole team**, by drag and by the dialog's
+  status buttons alike. "Only OP edits" applied literally to status would
+  make the board read-only for everyone else — and the buttons are the
+  keyboard path a drag cannot cover (DECISIONS #24). Locking fields but not
+  status is the deliberate line.
+- **A task whose creator is gone (`created_by` null, the FK's `set null`)
+  unlocks for everyone.** The alternative is a task nobody can ever touch.
+- **This is affordance, not enforcement.** The database still carries one
+  blanket policy per table — Non-negotiable 2 is untouched, and DECISIONS
+  #14's "anyone can rename anyone" reasoning still applies. Anyone holding
+  the anon key can still write anything via the API. Real per-row
+  enforcement means deliberately reversing Non-negotiable 2 — a policy
+  rewrite with carve-outs (mentions insert notifications into *other
+  users'* rows, DECISIONS #15) — and is parked in BACKLOG for Ethan's
+  planned security pass, not smuggled in as a patch.
+
+**The jump flash scrolled away** (*"flash works but then it scrolls
+away"*). Cause: images above the target finish loading after
+`scrollIntoView` and push the layout, carrying the view off the flashed
+message. Fix in both ChannelView and PostView: the center is re-asserted on
+an interval for the flash's 1.6-second lifetime, cancelled instantly by the
+user's own wheel/touch scroll — the jump must never fight them.
+
+**Task descriptions render on the board cards** — `plainFromRich`, clamped
+to two lines, muted. They previously existed only inside the edit dialog.
+
+**Forum creation was undiscoverable** (*"i cant create my own forums"*).
+Creation lived only on /channels behind the kind picker. /forums now has a
+New forum button — same `createChannel`, kind fixed to `forum`, landing on
+the new forum. Nothing was broken in the create path; this was an
+affordance gap.
+
+**Icons distinguish the three surfaces**: chat channels keep `#` (Hash),
+forums get Newspaper (sidebar, /forums, the /channels groups), posts get
+MessageSquareText in the forum list. Ethan's ask verbatim.

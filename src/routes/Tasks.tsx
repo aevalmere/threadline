@@ -33,7 +33,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/lib/auth-context'
 import { useChannels } from '@/lib/channels-context'
 import { useProfiles } from '@/lib/profiles-context'
-import { richFromPlain } from '@/lib/rich'
+import { plainFromRich, richFromPlain } from '@/lib/rich'
 import { supabase } from '@/lib/supabase'
 import {
   STATUS_LABELS,
@@ -334,12 +334,27 @@ export default function Tasks() {
         onClose={() => setDialog(null)}
         onSubmit={create}
       />
+      {/* Detail fields and Delete belong to the creator; status stays open to
+          the whole team (the buttons are the keyboard path across columns).
+          A task whose creator's account is gone (created_by null) is
+          editable by everyone — the alternative is a task nobody can touch. */}
       <TaskDialog
         open={dialog?.mode === 'edit'}
-        title="Edit task"
+        title={
+          dialog?.mode === 'edit' &&
+          dialog.task.created_by !== null &&
+          dialog.task.created_by !== authorId
+            ? 'Task'
+            : 'Edit task'
+        }
         submitLabel="Save"
         initial={dialog?.mode === 'edit' ? fieldsFromTask(dialog.task) : {}}
         source={dialog?.mode === 'edit' ? sourceFor(dialog.task) : null}
+        fieldsLocked={
+          dialog?.mode === 'edit' &&
+          dialog.task.created_by !== null &&
+          dialog.task.created_by !== authorId
+        }
         onClose={() => setDialog(null)}
         onSubmit={(fields) => (dialog?.mode === 'edit' ? edit(dialog.task, fields) : Promise.resolve())}
         onDelete={dialog?.mode === 'edit' ? () => deleteTask(dialog.task.id) : undefined}
@@ -456,6 +471,11 @@ function TaskCard({
       )}
     >
       <p className="break-words">{task.title}</p>
+      {plainFromRich(task.description_rich) !== '' && (
+        <p className="text-muted-foreground mt-1 line-clamp-2 text-xs break-words whitespace-pre-wrap">
+          {plainFromRich(task.description_rich)}
+        </p>
+      )}
       {(task.due_date || task.assignee_id || source) && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {task.due_date && (

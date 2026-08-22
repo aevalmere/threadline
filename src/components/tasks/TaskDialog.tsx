@@ -40,6 +40,7 @@ export function TaskDialog({
   submitLabel,
   initial,
   source,
+  fieldsLocked = false,
   onClose,
   onSubmit,
   onDelete,
@@ -50,6 +51,14 @@ export function TaskDialog({
   initial: Partial<TaskFields>
   /** Rendered as the "from #channel" chip when the task has a source. */
   source?: TaskSource | null
+  /**
+   * True when the viewer is not the task's creator: the detail fields and
+   * Delete are the creator's, but status stays live for everyone — moving
+   * work across the board is the team's, and these buttons are the keyboard
+   * path a drag cannot cover. UI-level only, deliberately: the database
+   * stays one trusted workspace (Non-negotiable 2).
+   */
+  fieldsLocked?: boolean
   onClose: () => void
   onSubmit: (fields: TaskFields) => Promise<void>
   /** Present only in edit mode. */
@@ -66,9 +75,10 @@ export function TaskDialog({
             submitLabel={submitLabel}
             initial={initial}
             source={source}
+            fieldsLocked={fieldsLocked}
             onClose={onClose}
             onSubmit={onSubmit}
-            onDelete={onDelete}
+            onDelete={fieldsLocked ? undefined : onDelete}
           />
         )}
       </DialogContent>
@@ -100,6 +110,7 @@ function TaskForm({
   submitLabel,
   initial,
   source,
+  fieldsLocked = false,
   onClose,
   onSubmit,
   onDelete,
@@ -108,6 +119,7 @@ function TaskForm({
   submitLabel: string
   initial: Partial<TaskFields>
   source?: TaskSource | null
+  fieldsLocked?: boolean
   onClose: () => void
   onSubmit: (fields: TaskFields) => Promise<void>
   onDelete?: () => Promise<void>
@@ -185,7 +197,8 @@ function TaskForm({
           id="task-title"
           value={fields.title}
           onChange={(e) => set('title', e.target.value)}
-          autoFocus
+          disabled={fieldsLocked}
+          autoFocus={!fieldsLocked}
         />
       </div>
 
@@ -220,7 +233,7 @@ function TaskForm({
             id="task-assignee"
             value={fields.assigneeId ?? ''}
             onChange={(e) => set('assigneeId', e.target.value === '' ? null : e.target.value)}
-            disabled={profilesLoading}
+            disabled={profilesLoading || fieldsLocked}
             className={cn(
               'border-input bg-transparent h-9 w-full min-w-0 rounded-md border px-3 py-1 text-sm shadow-xs',
               'focus-visible:border-ring focus-visible:ring-ring/50 outline-none focus-visible:ring-[3px]',
@@ -244,6 +257,7 @@ function TaskForm({
             type="date"
             value={fields.dueDate ?? ''}
             onChange={(e) => set('dueDate', e.target.value === '' ? null : e.target.value)}
+            disabled={fieldsLocked}
           />
         </div>
       </div>
@@ -256,6 +270,7 @@ function TaskForm({
           id="task-description"
           value={fields.description}
           onChange={(e) => set('description', e.target.value)}
+          disabled={fieldsLocked}
           rows={3}
           className={cn(
             'border-input placeholder:text-muted-foreground w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs',
