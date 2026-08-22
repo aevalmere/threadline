@@ -369,6 +369,7 @@ export default function Tasks() {
         submitLabel="Save"
         initial={dialog?.mode === 'edit' ? fieldsFromTask(dialog.task) : {}}
         source={dialog?.mode === 'edit' ? sourceFor(dialog.task) : null}
+        taskId={dialog?.mode === 'edit' ? dialog.task.id : undefined}
         fieldsLocked={
           dialog?.mode === 'edit' &&
           dialog.task.created_by !== null &&

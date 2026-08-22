@@ -12,6 +12,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 
+import { LinkedItems } from '@/components/LinkedItems'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -40,6 +41,7 @@ export function TaskDialog({
   submitLabel,
   initial,
   source,
+  taskId,
   fieldsLocked = false,
   onClose,
   onSubmit,
@@ -51,6 +53,8 @@ export function TaskDialog({
   initial: Partial<TaskFields>
   /** Rendered as the "from #channel" chip when the task has a source. */
   source?: TaskSource | null
+  /** Present in edit mode — enables the Linked items backlink panel. */
+  taskId?: string
   /**
    * True when the viewer is not the task's creator: the detail fields and
    * Delete are the creator's, but status stays live for everyone — moving
@@ -75,6 +79,7 @@ export function TaskDialog({
             submitLabel={submitLabel}
             initial={initial}
             source={source}
+            taskId={taskId}
             fieldsLocked={fieldsLocked}
             onClose={onClose}
             onSubmit={onSubmit}
@@ -110,6 +115,7 @@ function TaskForm({
   submitLabel,
   initial,
   source,
+  taskId,
   fieldsLocked = false,
   onClose,
   onSubmit,
@@ -119,6 +125,7 @@ function TaskForm({
   submitLabel: string
   initial: Partial<TaskFields>
   source?: TaskSource | null
+  taskId?: string
   fieldsLocked?: boolean
   onClose: () => void
   onSubmit: (fields: TaskFields) => Promise<void>
@@ -188,6 +195,8 @@ function TaskForm({
           <SourceChip source={source} />
         </div>
       )}
+
+      {taskId && <LinkedItems targetType="task" targetId={taskId} />}
 
       <div className="space-y-2">
         <label htmlFor="task-title" className="text-sm font-medium">

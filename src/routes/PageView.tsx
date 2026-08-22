@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import type { BlockNoteEditor } from '@blocknote/core'
 import { Link2Icon, PencilLineIcon, Trash2Icon } from 'lucide-react'
 
+import { LinkedItems } from '@/components/LinkedItems'
 import { LinkPicker } from '@/components/docs/LinkPicker'
 import PageEditor from '@/components/docs/PageEditor'
 import { Button } from '@/components/ui/button'
@@ -320,6 +321,8 @@ function PageSurface({
           onChange={markDirty}
         />
       </div>
+
+      <LinkedItems targetType="page" targetId={page.id} />
 
       <LinkPicker
         open={picking}
