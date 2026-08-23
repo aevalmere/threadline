@@ -1541,6 +1541,7 @@ async function rlsCheck(email: string) {
   results.push(...(await tasksLinksCheck(anon)))
   results.push(...(await postsTagsCheck(anon)))
   results.push(...(await pagesCheck(anon)))
+  results.push(...(await orderingCheck(anon)))
   results.push(...(await searchCheck(anon)))
   results.push(...(await accountsCheck()))
   results.push(...(await deniedWithoutSession()))
@@ -1724,6 +1725,134 @@ async function pagesCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
           (delPage.data?.length ?? 0) === 0 ? ' — silently blocked by RLS' : ''
         }`,
   })
+
+  return out
+}
+
+/**
+ * The beta-round-3 `position` columns — SPEC §1.2, §1.7, §2.3, migration
+ * 20260823001537. What only the live database can prove:
+ *
+ *  - A row inserted with **no** `position` still lands. That default is what
+ *    keeps the twelve insert paths in this file — and the deployed bundle
+ *    still running pre-ordering code during the push-to-deploy gap — out of
+ *    23502, so it is worth a probe rather than a reading of the migration.
+ *  - The value it defaults to sorts to the *bottom* of its list (epoch scale,
+ *    ~1.7e9, against backfilled values in the thousands), which is where a
+ *    row created by code that knows nothing about ordering belongs.
+ *  - An authenticated client can write a position back: one row per drop,
+ *    never a renumber (Non-negotiable 8).
+ *  - The backfill left every list a **total order**. Two rows sharing a
+ *    position is the one failure that would not raise anything — the list
+ *    would just swap them at random from render to render.
+ */
+async function orderingCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
+  const out: ProbeResult[] = []
+  const PROBE = '__probe_ordering'
+
+  die(
+    'sweep stale ordering probe channels',
+    (await admin.from('channels').delete().eq('name', PROBE)).error,
+  )
+
+  // Deliberately no `position` in the payload — that is the whole point.
+  const made = await anon
+    .from('channels')
+    .insert({ name: PROBE, kind: 'chat', topic: 'temporary' })
+    .select('id,position')
+    .single<{ id: string; position: number | null }>()
+  const defaulted = made.data?.position ?? null
+  out.push({
+    verb: 'pos default',
+    ok: !made.error && defaulted !== null && defaulted > 1e9,
+    detail: made.error
+      ? made.error.message
+      : defaulted === null
+        ? 'inserted but position is null'
+        : `insert without position defaulted to ${defaulted.toFixed(0)} — epoch scale, sorts last`,
+  })
+
+  if (made.data) {
+    const moved = await anon
+      .from('channels')
+      .update({ position: 512 })
+      .eq('id', made.data.id)
+      .select('id,position')
+    out.push({
+      verb: 'pos write',
+      ok: !moved.error && (moved.data?.length ?? 0) === 1,
+      detail: moved.error
+        ? moved.error.message
+        : `${moved.data?.length ?? 0} row written — one per drop${
+            (moved.data?.length ?? 0) === 0 ? ' — silently blocked by RLS' : ''
+          }`,
+    })
+    die(
+      'clean up the ordering probe channel',
+      (await admin.from('channels').delete().eq('id', made.data.id)).error,
+    )
+  } else {
+    out.push({ verb: 'pos write', ok: false, detail: 'skipped — insert failed' })
+  }
+
+  // Distinctness runs over the real rows, per list, exactly as each surface
+  // partitions them: channels by kind, collections among siblings sharing a
+  // parent, pages within their collection.
+  const lists: [string, string, () => Promise<{ key: string; pos: number }[]>][] = [
+    [
+      'pos uniq chans',
+      'channel',
+      async () =>
+        ((
+          await anon.from('channels').select('kind,position')
+        ).data ?? []).map((r: { kind: string; position: number }) => ({
+          key: r.kind,
+          pos: r.position,
+        })),
+    ],
+    [
+      'pos uniq cols',
+      'collection',
+      async () =>
+        ((
+          await anon.from('collections').select('parent_id,position')
+        ).data ?? []).map((r: { parent_id: string | null; position: number }) => ({
+          key: r.parent_id ?? 'root',
+          pos: r.position,
+        })),
+    ],
+    [
+      'pos uniq pages',
+      'page',
+      async () =>
+        ((
+          await anon.from('pages').select('collection_id,position')
+        ).data ?? []).map((r: { collection_id: string | null; position: number }) => ({
+          key: r.collection_id ?? 'unfiled',
+          pos: r.position,
+        })),
+    ],
+  ]
+
+  for (const [verb, noun, fetch] of lists) {
+    const rows = await fetch()
+    const seen = new Map<string, Set<number>>()
+    let collisions = 0
+    for (const r of rows) {
+      const bucket = seen.get(r.key) ?? new Set<number>()
+      if (bucket.has(r.pos)) collisions++
+      bucket.add(r.pos)
+      seen.set(r.key, bucket)
+    }
+    out.push({
+      verb,
+      ok: collisions === 0,
+      detail:
+        collisions === 0
+          ? `${rows.length} ${noun} rows, ${seen.size} list(s), every position distinct`
+          : `${collisions} duplicate position(s) — that list has no stable order`,
+    })
+  }
 
   return out
 }
