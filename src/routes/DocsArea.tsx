@@ -158,6 +158,14 @@ function CollectionsPane({
       if (list) list.push(p)
       else grouped.set(p.collection_id, [p])
     }
+    // Sort here, not just at fetch time. `reorderPage` patches `position` on
+    // one row optimistically without reordering the array, so without this the
+    // drop would not move anything on screen until the next poll — and worse,
+    // onDragEnd below computes its from/to against siblings sorted BY
+    // POSITION, so a second drag inside that window would be reading indices
+    // off a list the user is not looking at and would write the inverse
+    // position. `flattenTree` does the same for collections (src/lib/pages.ts).
+    for (const list of grouped.values()) list.sort(byPosition)
     return grouped
   }, [pages.pages])
 

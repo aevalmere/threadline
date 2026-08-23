@@ -108,7 +108,7 @@ export function ChannelsProvider({ children }: { children: ReactNode }) {
   /**
    * Reorder within one kind's list. `from`/`to` are indices into that kind's
    * visible list; `to` is the destination index in the final array, which is
-   * what dnd-kit reports. One row is written per drop (SPEC §1.4) — never the
+   * what dnd-kit reports. One row is written per drop (SPEC §1.2) — never the
    * whole list.
    *
    * Optimistic: the sidebar reorders in the same frame as the drop, and a

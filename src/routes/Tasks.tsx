@@ -496,7 +496,10 @@ function DraggableCard({
         drop.setNodeRef(el)
       }}
       className={cn(
-        'relative',
+        // `group/card` belongs here, not on the card itself: the grip is the
+        // card's SIBLING, and Tailwind's group-hover variant compiles to a
+        // descendant selector, so a marker on the card can never reveal it.
+        'group/card relative',
         drag.isDragging && 'opacity-40',
         drop.isOver && 'ring-ring/50 rounded-lg ring-2',
       )}
@@ -517,7 +520,7 @@ function DraggableCard({
         {...drag.listeners}
         aria-hidden
         title="Drag to move"
-        className="text-muted-foreground/50 hover:text-muted-foreground absolute top-2 right-1.5 cursor-grab px-1 opacity-0 transition-opacity group-hover/card:opacity-100 active:cursor-grabbing"
+        className="text-muted-foreground/50 hover:text-muted-foreground absolute top-2 right-1.5 cursor-grab px-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/card:opacity-100 active:cursor-grabbing"
       >
         <GripVerticalIcon className="size-4" />
       </span>
@@ -551,7 +554,7 @@ function TaskCard({
         }
       }}
       className={cn(
-        'bg-card text-card-foreground group/card w-full rounded-lg border p-3 pr-7 text-left text-sm shadow-sm',
+        'bg-card text-card-foreground w-full rounded-lg border p-3 pr-7 text-left text-sm shadow-sm',
         onOpen &&
           'focus-visible:ring-ring/50 cursor-pointer outline-none focus-visible:ring-[3px]',
         overlay && 'shadow-md',

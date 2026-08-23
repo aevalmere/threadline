@@ -12,6 +12,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { useState } from 'react'
 import {
   FileTextIcon,
   HashIcon,
@@ -172,6 +173,7 @@ function SortableChannelList({
 }) {
   const { moveChannel } = useChannels()
   const { markDragged, swallowClick } = useDragClickGuard()
+  const [moveError, setMoveError] = useState<string | null>(null)
   // 6px, matching the board: below that a press is a click, so navigating to a
   // channel by clicking it still works with the whole row as the drag surface.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
@@ -183,7 +185,14 @@ function SortableChannelList({
     const from = channels.findIndex((c) => c.id === active.id)
     const to = channels.findIndex((c) => c.id === over.id)
     if (from === -1 || to === -1) return
-    void moveChannel(kind, from, to)
+    // moveChannel rethrows on a failed write after refreshing back to the
+    // server's order, so the row visibly snaps home — but a bare `void` here
+    // made that an unhandled rejection with nothing said. Same shape as
+    // DocsArea's run().
+    setMoveError(null)
+    moveChannel(kind, from, to).catch((err: unknown) =>
+      setMoveError(err instanceof Error ? err.message : 'Could not save the new order.'),
+    )
   }
 
   return (
@@ -209,6 +218,11 @@ function SortableChannelList({
           />
         ))}
       </SortableContext>
+      {moveError && (
+        <p role="alert" className="text-destructive px-2 text-xs">
+          {moveError}
+        </p>
+      )}
     </DndContext>
   )
 }
