@@ -512,6 +512,11 @@ function DraggableCard({
         Not `drag.attributes`: those add role="button" and a screen-reader
         promise of a space-bar drag that no KeyboardSensor answers. Moving a
         task by keyboard is the read view's status buttons.
+
+        `touch-none` is what PointerSensor needs for a finger to drag rather
+        than scroll. The sidebar deliberately does NOT set it, because there
+        the drag surface is the whole row and it would eat the scroll gesture
+        (Sidebar.tsx). A grip this size costs the scroll nothing.
       */}
       <span
         {...drag.listeners}
@@ -522,7 +527,7 @@ function DraggableCard({
         // default leaves a touch device with no rule that can bring it back —
         // and this grip is the only pointer path to move a card. A muted icon
         // that is always there costs less than a card nobody can drag.
-        className="text-muted-foreground/50 hover:text-muted-foreground absolute top-2 right-1.5 cursor-grab px-1 transition-colors active:cursor-grabbing"
+        className="text-muted-foreground/50 hover:text-muted-foreground absolute top-2 right-1.5 cursor-grab touch-none px-1 transition-colors active:cursor-grabbing"
       >
         <GripVerticalIcon className="size-4" />
       </span>

@@ -267,11 +267,33 @@ export function usePages() {
     [pages, refresh],
   )
 
+  /**
+   * Re-file a page into another collection — the menu action, not the drag.
+   *
+   * It has to write a position as well as a collection_id. Without one the
+   * page arrives carrying its position from the list it left, so where it
+   * lands in the destination depends on a number the user cannot see: a page
+   * that was first in its old collection sorts to the top of its new one.
+   * Before this batch pages had no position at all and the tree ordered by
+   * recency, so a re-filed page appeared somewhere predictable; the ordering
+   * feature is what made this arbitrary. Append instead, like createPage.
+   */
   const movePage = useCallback(
     async (id: string, collectionId: string | null) => {
+      const siblingQuery = supabase.from('pages').select('position')
+      const top = await (collectionId === null
+        ? siblingQuery.is('collection_id', null)
+        : siblingQuery.eq('collection_id', collectionId)
+      )
+        .order('position', { ascending: false })
+        .limit(1)
+      const known = top.error
+        ? (pages ?? []).filter((p) => p.collection_id === collectionId)
+        : ((top.data ?? []) as { position: number }[])
+
       const { data, error: err } = await supabase
         .from('pages')
-        .update({ collection_id: collectionId })
+        .update({ collection_id: collectionId, position: appendPosition(known) })
         .eq('id', id)
         .select('id')
       if (err || (data?.length ?? 0) !== 1) {
@@ -279,7 +301,7 @@ export function usePages() {
       }
       await refresh()
     },
-    [refresh],
+    [pages, refresh],
   )
 
   const deletePage = useCallback(

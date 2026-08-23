@@ -2007,7 +2007,7 @@
       "file_type": "code",
       "norm_label": "claimedit()",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L343"
+      "source_location": "L357"
     },
     {
       "id": "src_lib_usedocs_deletepagerecord",
@@ -2019,7 +2019,7 @@
       "file_type": "code",
       "norm_label": "deletepagerecord()",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L423"
+      "source_location": "L437"
     },
     {
       "id": "src_lib_usedocs_releaseedit",
@@ -2031,7 +2031,7 @@
       "file_type": "code",
       "norm_label": "releaseedit()",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L357"
+      "source_location": "L371"
     },
     {
       "id": "src_lib_usedocs_savepagerecord",
@@ -2043,7 +2043,7 @@
       "file_type": "code",
       "norm_label": "savepagerecord()",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L369"
+      "source_location": "L383"
     },
     {
       "id": "src_lib_usedocs_syncpagelinks",
@@ -2055,7 +2055,7 @@
       "file_type": "code",
       "norm_label": "syncpagelinks()",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L391"
+      "source_location": "L405"
     },
     {
       "id": "src_lib_usedocs_usecollections",
@@ -2079,7 +2079,7 @@
       "file_type": "code",
       "norm_label": "usepage()",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L288"
+      "source_location": "L302"
     },
     {
       "id": "src_lib_usedocs_usepages",
@@ -2091,7 +2091,7 @@
       "file_type": "code",
       "norm_label": "usepages()",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L172"
+      "source_location": "L181"
     },
     {
       "id": "src_routes_docsarea_ancestorcollapsed",
@@ -15690,7 +15690,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L346",
+      "source_location": "L360",
       "weight": 1.0
     },
     {
@@ -15702,7 +15702,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L360",
+      "source_location": "L374",
       "weight": 1.0
     },
     {
@@ -15714,7 +15714,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L376",
+      "source_location": "L390",
       "weight": 1.0
     },
     {
@@ -15726,7 +15726,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L400",
+      "source_location": "L414",
       "weight": 1.0
     },
     {
@@ -15738,7 +15738,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L401",
+      "source_location": "L415",
       "weight": 1.0
     },
     {
@@ -15750,7 +15750,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L406",
+      "source_location": "L420",
       "weight": 1.0
     },
     {
@@ -15762,7 +15762,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L105",
+      "source_location": "L114",
       "weight": 1.0
     },
     {
@@ -15774,7 +15774,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L81",
+      "source_location": "L90",
       "weight": 1.0
     },
     {
@@ -15786,7 +15786,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L175",
+      "source_location": "L184",
       "weight": 1.0
     },
     {
@@ -15798,7 +15798,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L211",
+      "source_location": "L225",
       "weight": 1.0
     },
     {
@@ -15810,7 +15810,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L214",
+      "source_location": "L228",
       "weight": 1.0
     },
     {
@@ -15822,7 +15822,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L238",
+      "source_location": "L252",
       "weight": 1.0
     },
     {
@@ -15834,7 +15834,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L273",
+      "source_location": "L287",
       "weight": 1.0
     },
     {
@@ -36862,7 +36862,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L172",
+      "source_location": "L181",
       "weight": 1.0
     },
     {
@@ -36873,7 +36873,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L288",
+      "source_location": "L302",
       "weight": 1.0
     },
     {
@@ -36884,29 +36884,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L343",
-      "weight": 1.0
-    },
-    {
-      "source": "src_lib_usedocs",
-      "target": "src_lib_usedocs_releaseedit",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/lib/useDocs.ts",
       "source_location": "L357",
-      "weight": 1.0
-    },
-    {
-      "source": "src_lib_usedocs",
-      "target": "src_lib_usedocs_savepagerecord",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/lib/useDocs.ts",
-      "source_location": "L369",
       "weight": 1.0
     },
     {
@@ -36922,13 +36900,35 @@
     },
     {
       "source": "src_lib_usedocs",
+      "target": "src_lib_usedocs_releaseedit",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/lib/useDocs.ts",
+      "source_location": "L371",
+      "weight": 1.0
+    },
+    {
+      "source": "src_lib_usedocs",
+      "target": "src_lib_usedocs_savepagerecord",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/lib/useDocs.ts",
+      "source_location": "L383",
+      "weight": 1.0
+    },
+    {
+      "source": "src_lib_usedocs",
       "target": "src_lib_usedocs_syncpagelinks",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L391",
+      "source_location": "L405",
       "weight": 1.0
     },
     {
@@ -36939,7 +36939,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L423",
+      "source_location": "L437",
       "weight": 1.0
     },
     {
@@ -39372,7 +39372,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L103",
+      "source_location": "L112",
       "weight": 1.0
     },
     {
@@ -39384,7 +39384,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L236",
+      "source_location": "L250",
       "weight": 1.0
     },
     {
@@ -39425,5 +39425,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "61372c147bfe10a255a86571926544010d18ae94"
+  "built_at_commit": "125fc42eaaf29ff08c79282ee0c9334abd6ae78f"
 }

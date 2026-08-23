@@ -402,9 +402,9 @@
     "semantic_hash": "a93e165a37da1b1c25981b4a38b4a27e"
   },
   "src/lib/useDocs.ts": {
-    "mtime": 1787444797.0827355,
-    "seen": 1787444950.878426,
-    "ast_hash": "46d43199f5220c2d0a3cadd347152e95",
+    "mtime": 1787507010.9958544,
+    "seen": 1787507206.5237145,
+    "ast_hash": "628a974d4c6744048c3ee46b68b3bf0e",
     "semantic_hash": ""
   },
   "src/lib/useIsDesktop.ts": {

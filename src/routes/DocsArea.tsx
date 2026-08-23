@@ -188,6 +188,12 @@ function CollectionsPane({
    * in the same collection. Anything else is ignored rather than guessed at —
    * re-filing a page into another collection is `movePage`, a menu action,
    * not a drag (SPEC §1.7).
+   *
+   * Like the sidebar, and for the same reason, these rows carry no
+   * `touch-action: none`: the row IS the drag surface, so setting it would
+   * stop a finger scrolling a long tree. Reordering here is a pointer-device
+   * affordance; the board sets it on its grip, which is small enough not to
+   * cost the scroll anything.
    */
   const sortableIds = useMemo(() => {
     const ids: string[] = []
@@ -390,8 +396,15 @@ function ancestorCollapsed(
 ): boolean {
   let parentId = row.collection.parent_id
   const byId = new Map(tree.map((r) => [r.collection.id, r.collection]))
-  while (parentId !== null) {
+  // A parent_id cycle is schema-legal — the FK only checks that the parent
+  // exists — which is why `flattenTree` carries a visited set. Walking up
+  // without one turns that same bad data into an infinite loop during render,
+  // and a hung tab is worse than a tree in the wrong order. `flattenTree`
+  // surfaces cycle members at the root, so they do reach this walk.
+  const seen = new Set<string>()
+  while (parentId !== null && !seen.has(parentId)) {
     if (collapsed.has(parentId)) return true
+    seen.add(parentId)
     parentId = byId.get(parentId)?.parent_id ?? null
   }
   return false

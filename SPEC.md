@@ -56,7 +56,7 @@ The task then renders a "from #channel" chip that jumps to the exact message. Sa
 
 `collections` form a tree via `parent_id`. `pages` hold BlockNote JSON in `body_rich`, autosaved on a 1s debounce.
 
-**The tree is manually ordered** (beta round 3), on the same shared fractional `position` as the sidebar: collections reorder among their siblings, pages within their collection. Moving a page *between* collections is not a drag — it stays out of scope for v1. One consequence is deliberate: a page no longer rises to the top of its collection when it is edited. A list you can drag cannot also rearrange itself underneath you.
+**The tree is manually ordered** (beta round 3), on the same shared fractional `position` as the sidebar: collections reorder among their siblings, pages within their collection. Moving a page *between* collections is not a drag — it is the filing control in the page header shipped in P4, and a re-filed page appends to the bottom of its new collection rather than carrying its old list's position into it. One consequence is deliberate: a page no longer rises to the top of its collection when it is edited. A list you can drag cannot also rearrange itself underneath you.
 
 **Soft edit-lock, no CRDT.** A page being edited stamps `editing_user_id` and `editing_heartbeat_at` (heartbeat every ~15s). Another user opening that page within ~45s of the last heartbeat sees a banner naming the editor. It is a warning, not a lock — last write wins. Collaborative co-editing is an explicit non-goal.
 
