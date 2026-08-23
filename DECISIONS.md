@@ -1625,9 +1625,17 @@ argument for the reviewer existing:
 - **The board's grip could never be seen.** The same commit that made the
   grip the *only* drag surface put `group/card` on the card — the grip's
   sibling. Tailwind's group-hover variant compiles to a descendant
-  selector, so the grip sat at `opacity-0` in every state. The marker moved
-  to the wrapper; the grip is additionally solid below `sm`, because on a
-  touch viewport there is no hover to reveal it with.
+  selector, so the grip sat at `opacity-0` in every state.
+
+  The first fix moved the marker to the wrapper and kept the hover reveal,
+  and reading the **built stylesheet** to settle a specificity question the
+  reviewer had raised showed that was still wrong: Tailwind emits
+  `group-hover` inside `@media(hover:hover)`, so on any touch device the
+  reveal rule never applies at all and the only way to move a card stays
+  invisible. A breakpoint does not fix that — a tablet is wide *and*
+  hoverless. So the grip is simply always visible now, and `group/card` is
+  gone with the variant that needed it. A muted icon that is always there
+  costs less than a card nobody can drag.
 
 **The seed grew probes for the schema this batch shipped** — the migration
 arrived with none, against the discipline every prior phase kept (P3

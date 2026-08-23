@@ -496,10 +496,7 @@ function DraggableCard({
         drop.setNodeRef(el)
       }}
       className={cn(
-        // `group/card` belongs here, not on the card itself: the grip is the
-        // card's SIBLING, and Tailwind's group-hover variant compiles to a
-        // descendant selector, so a marker on the card can never reveal it.
-        'group/card relative',
+        'relative',
         drag.isDragging && 'opacity-40',
         drop.isOver && 'ring-ring/50 rounded-lg ring-2',
       )}
@@ -520,7 +517,12 @@ function DraggableCard({
         {...drag.listeners}
         aria-hidden
         title="Drag to move"
-        className="text-muted-foreground/50 hover:text-muted-foreground absolute top-2 right-1.5 cursor-grab px-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/card:opacity-100 active:cursor-grabbing"
+        // Always visible, never hover-revealed. Tailwind compiles group-hover
+        // inside `@media(hover:hover)`, so any variant that hides this by
+        // default leaves a touch device with no rule that can bring it back —
+        // and this grip is the only pointer path to move a card. A muted icon
+        // that is always there costs less than a card nobody can drag.
+        className="text-muted-foreground/50 hover:text-muted-foreground absolute top-2 right-1.5 cursor-grab px-1 transition-colors active:cursor-grabbing"
       >
         <GripVerticalIcon className="size-4" />
       </span>
