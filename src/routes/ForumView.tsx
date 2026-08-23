@@ -118,10 +118,17 @@ export default function ForumView() {
       ) : (
         <ul className="divide-y rounded-md border">
           {visible.map((post) => (
-            <li key={post.id} className="px-4 py-3">
+            <li
+              key={post.id}
+              // The whole row is the click target, not just the title: the
+              // stretched link below covers it. A <Link> wrapping everything
+              // would nest the tag-chip buttons inside an anchor, which is
+              // invalid and unreachable by keyboard.
+              className="hover:bg-accent/40 focus-within:bg-accent/40 relative px-4 py-3"
+            >
               <Link
                 to={`/posts/${post.id}`}
-                className="inline-flex items-center gap-2 text-sm font-medium underline-offset-4 hover:underline"
+                className="inline-flex items-center gap-2 text-sm font-medium after:absolute after:inset-0 after:content-['']"
               >
                 <MessageSquareTextIcon className="text-muted-foreground size-4 shrink-0" />
                 {post.title}
@@ -134,12 +141,15 @@ export default function ForumView() {
                   {counts.get(post.id) ?? 0}
                 </span>
                 {(tags.get(post.id) ?? []).map((t) => (
-                  <TagChip
-                    key={t.id}
-                    tag={t}
-                    active={tagFilter === t.name}
-                    onClick={() => setTagFilter(tagFilter === t.name ? null : t.name)}
-                  />
+                  // z-10: above the stretched link, so filtering by a tag does
+                  // not also open the post it happens to sit on.
+                  <span key={t.id} className="relative z-10">
+                    <TagChip
+                      tag={t}
+                      active={tagFilter === t.name}
+                      onClick={() => setTagFilter(tagFilter === t.name ? null : t.name)}
+                    />
+                  </span>
                 ))}
               </div>
             </li>

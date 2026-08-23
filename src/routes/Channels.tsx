@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { HashIcon, NewspaperIcon, PlusIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -100,25 +101,42 @@ function ChannelGroup({
       ) : (
         <ul className="divide-y rounded-md border">
           {channels.map((c) => (
-            <li key={c.id} className="flex items-center gap-3 px-3 py-2.5">
+            <li
+              key={c.id}
+              // The whole row opens the channel, the way the forums list has
+              // always worked. Same stretched-link pattern as the post list,
+              // so Edit and Delete stay real buttons above the overlay rather
+              // than being nested inside an anchor.
+              className="hover:bg-accent/40 focus-within:bg-accent/40 relative flex items-center gap-3 px-3 py-2.5"
+            >
               {c.kind === 'forum' ? (
                 <NewspaperIcon className="text-muted-foreground size-4 shrink-0" />
               ) : (
                 <HashIcon className="text-muted-foreground size-4 shrink-0" />
               )}
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{c.name}</p>
+                <Link
+                  to={c.kind === 'forum' ? `/forums/${c.id}` : `/channels/${c.id}`}
+                  className="truncate text-sm font-medium after:absolute after:inset-0 after:content-['']"
+                >
+                  {c.name}
+                </Link>
                 {c.topic && (
                   <p className="text-muted-foreground truncate text-xs">{c.topic}</p>
                 )}
               </div>
-              <Button variant="ghost" size="sm" onClick={() => onEdit(c)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="relative z-10"
+                onClick={() => onEdit(c)}
+              >
                 Edit
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-destructive hover:text-destructive"
+                className="text-destructive hover:text-destructive relative z-10"
                 onClick={() => onDelete(c)}
               >
                 Delete
