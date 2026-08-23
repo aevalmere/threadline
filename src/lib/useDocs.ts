@@ -73,12 +73,21 @@ export function useCollections() {
       )
         .order('position', { ascending: false })
         .limit(1)
+      // A failed read must not fall through to `appendPosition([])`, which
+      // returns POSITION_STEP — in a backfilled list that is the FIRST row's
+      // position, so the new collection would appear at the top of the list
+      // instead of the bottom. Fall back to what this client already knows
+      // instead: still an append, and the worst case is the position tie
+      // `byPosition` already breaks on id.
+      const known = top.error
+        ? (collections ?? []).filter((c) => c.parent_id === parentId)
+        : ((top.data ?? []) as { position: number }[])
       const ins = await supabase
         .from('collections')
         .insert({
           name: trimmed,
           parent_id: parentId,
-          position: appendPosition((top.data ?? []) as { position: number }[]),
+          position: appendPosition(known),
         })
         .select(COLLECTION_COLUMNS)
         .single()
@@ -88,7 +97,7 @@ export function useCollections() {
       await refresh()
       return ins.data as Collection
     },
-    [refresh],
+    [collections, refresh],
   )
 
   /**
@@ -205,13 +214,18 @@ export function usePages() {
       )
         .order('position', { ascending: false })
         .limit(1)
+      // Same fallback as createCollection: an empty list means "position
+      // 1024", which in a backfilled list is the top, not the bottom.
+      const known = top.error
+        ? (pages ?? []).filter((p) => p.collection_id === collectionId)
+        : ((top.data ?? []) as { position: number }[])
       const ins = await supabase
         .from('pages')
         .insert(
           pageInsertPayload({
             collectionId,
             createdBy: authorId,
-            position: appendPosition((top.data ?? []) as { position: number }[]),
+            position: appendPosition(known),
           }),
         )
         .select(PAGE_LIST_COLUMNS)
@@ -222,7 +236,7 @@ export function usePages() {
       await refresh()
       return ins.data as PageMeta
     },
-    [authorId, refresh],
+    [authorId, pages, refresh],
   )
 
   /**

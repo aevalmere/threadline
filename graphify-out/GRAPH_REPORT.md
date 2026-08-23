@@ -1,7 +1,7 @@
 # Graph Report - threadline  (2026-08-23)
 
 ## Corpus Check
-- 194 files · ~139,969 words
+- 194 files · ~140,071 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `b6e0eae4`
+- Built from commit: `61372c14`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -136,16 +136,16 @@
 10. `compilerOptions` - 17 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `AssigneeAvatar()` --calls--> `useProfiles()`  [EXTRACTED]
-  src/routes/Tasks.tsx → src/lib/profiles-context.ts
-- `DialogOverlay()` --calls--> `cn()`  [EXTRACTED]
-  src/components/ui/dialog.tsx → src/lib/utils.ts
-- `Command()` --calls--> `cn()`  [EXTRACTED]
-  src/components/ui/command.tsx → src/lib/utils.ts
 - `Column()` --calls--> `cn()`  [EXTRACTED]
   src/routes/Tasks.tsx → src/lib/utils.ts
 - `DraggableCard()` --calls--> `cn()`  [EXTRACTED]
   src/routes/Tasks.tsx → src/lib/utils.ts
+- `AssigneeAvatar()` --calls--> `useProfiles()`  [EXTRACTED]
+  src/routes/Tasks.tsx → src/lib/profiles-context.ts
+- `Command()` --calls--> `cn()`  [EXTRACTED]
+  src/components/ui/command.tsx → src/lib/utils.ts
+- `DialogOverlay()` --calls--> `cn()`  [EXTRACTED]
+  src/components/ui/dialog.tsx → src/lib/utils.ts
 
 ## Import Cycles
 - None detected.
@@ -372,12 +372,12 @@ Nodes (4): Getting started, Stack, Threadline, Where things live
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `cn()` connect `PostView.tsx` to `useAuth`, `Tasks.tsx`, `posts.ts`, `CommandPalette.tsx`?**
-  _High betweenness centrality (0.027) - this node is a cross-community bridge._
 - **Why does `useAuth()` connect `useAuth` to `PostView.tsx`, `DocsArea.tsx`, `Tasks.tsx`, `useMessages.ts`, `posts.ts`, `mentions.ts`, `auth-context.ts`, `unread-provider.tsx`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
+  _High betweenness centrality (0.026) - this node is a cross-community bridge._
+- **Why does `cn()` connect `PostView.tsx` to `useAuth`, `Tasks.tsx`, `posts.ts`, `CommandPalette.tsx`?**
+  _High betweenness centrality (0.022) - this node is a cross-community bridge._
 - **Why does `useProfiles()` connect `PostView.tsx` to `DocsArea.tsx`, `Tasks.tsx`, `useMessages.ts`, `posts.ts`, `mentions.ts`?**
-  _High betweenness centrality (0.010) - this node is a cross-community bridge._
+  _High betweenness centrality (0.013) - this node is a cross-community bridge._
 - **What connects `#1 — 2026-08-09 — The stack`, `#2 — 2026-08-09 — `messages.id` is `bigint identity`, not `uuid``, `#3 — 2026-08-09 — Seed script authenticates without passwords` to the rest of the system?**
   _433 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `PostView.tsx` be split into smaller, more focused modules?**

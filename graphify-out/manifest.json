@@ -540,9 +540,9 @@
     "semantic_hash": "e890a94ca0a540cf3e85d2c96147488b"
   },
   "src/routes/Tasks.tsx": {
-    "mtime": 1787505241.9101713,
-    "seen": 1787505636.7106583,
-    "ast_hash": "427bad892dbe491204f9ba095b217b59",
+    "mtime": 1787506220.058118,
+    "seen": 1787506408.6722825,
+    "ast_hash": "dc67f9594c77711f441e230445df9d9e",
     "semantic_hash": ""
   },
   "src/test/attachments.test.ts": {
@@ -1110,9 +1110,9 @@
     "semantic_hash": ""
   },
   "DECISIONS.md": {
-    "mtime": 1787505886.3794034,
-    "seen": 1787506158.3189147,
-    "ast_hash": "010416d40ddb4375477e5cf8f83a5cd2",
+    "mtime": 1787506228.3620944,
+    "seen": 1787506408.6725886,
+    "ast_hash": "2ed3e2e36b5910a905008b3aa7b654a8",
     "semantic_hash": ""
   },
   "README.md": {
@@ -1122,9 +1122,9 @@
     "semantic_hash": ""
   },
   "ROADMAP.md": {
-    "mtime": 1787505959.9774084,
-    "seen": 1787506158.3189278,
-    "ast_hash": "b281f7a5cfa98f0bc9cb7cc4a2b43cdb",
+    "mtime": 1787506388.2653584,
+    "seen": 1787506408.6725957,
+    "ast_hash": "0143b297cede110d68276e21637a255d",
     "semantic_hash": ""
   },
   "SPEC.md": {
