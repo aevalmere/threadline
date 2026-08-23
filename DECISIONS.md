@@ -1662,3 +1662,55 @@ Benign — `setNodeRef` is never called for a hidden row, so the droppable
 has no rect and `closestCenter` skips it — and moving a hook across an
 early return is a larger risk than the mismatch. Recorded here so the next
 session does not rediscover it as a bug.
+
+*Addendum, 2026-08-23 — the verification sweep after the review.* Eight
+passes over the round-3 surfaces, each one taking an area the batch review
+had not looked at directly, stopping after two consecutive passes found
+nothing. Six findings, and three of them are one root cause worth naming:
+**`position` became load-bearing in this batch, and not every path that
+creates or moves a row across lists was updated to write it.**
+
+- `createCollection` and `createPage` read `max(position)` from the server —
+  deliberately, so two people creating at once cannot compute the same
+  append — then discarded that read's error. On a failure both fell through
+  to `appendPosition([])`, which returns `POSITION_STEP`, and in a
+  backfilled list `POSITION_STEP` is the *first* row's position. A new page
+  or collection would have appeared at the top of the tree. Both now fall
+  back to the client's own list. `createChannel` never had it: it throws.
+- `movePage` wrote only `collection_id`, so a re-filed page arrived
+  carrying its position from the list it left — a page that was first in
+  its old collection sorted to the top of its new one, on a number nobody
+  can see. It appends now. SPEC §1.7 also claimed moving a page between
+  collections was "out of scope for v1"; it is the page-header filing
+  control P4 shipped, so the sentence said the opposite of the product.
+- The board's grip needed `touch-none`. PointerSensor wants it or the
+  browser's scroll gesture wins, so the grip was visible on touch and
+  inert — which undercut the reason the previous commit gave for making it
+  always visible. The sidebar and docs tree deliberately go without,
+  because there the row *is* the drag surface; that trade-off is now
+  written in both places instead of inherited silently.
+
+The other three:
+
+- **A keyboard regression that broke a G2 acceptance path.** Making the
+  task card a `role="button"` with an `onKeyDown` that preventDefaults
+  Enter put it in the way of `SourceChip`, the "from #channel" link inside
+  it. The chip stops click propagation — which is why the mouse path kept
+  working — but keydown bubbles too, so tabbing to the chip and pressing
+  Enter opened the card instead of jumping to the source message. The card
+  now acts on keydown only when it is itself the focus target.
+- **`ancestorCollapsed` could hang the tab.** It walks the parent chain
+  with no visited set, while `flattenTree` three files away carries one
+  precisely because a `parent_id` cycle is schema-legal — the FK only
+  checks existence — and flattenTree surfaces unreachable cycle members at
+  the root, so they reach that walk. Guarded.
+- **The docs `Copy link` rejected unhandled** (`void
+  navigator.clipboard.writeText`). The G4 review caught this exact shape in
+  `MessageGroup`; the round-2 docs context menus reintroduced it. Handled,
+  with the comment saying why nothing is shown: the menu has already closed.
+
+What stayed unfixed, deliberately: the `CollectionNode`/`useSortable`
+registry mismatch above, and — found here but **out of range** —
+`MyTasksList` wraps `SourceChip` in a real `<button>`, which is invalid
+interactive nesting. It predates this batch and the round-3 diff does not
+touch it; it belongs to a hardening pass, not to this sweep.

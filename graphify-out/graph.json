@@ -3555,7 +3555,7 @@
       "file_type": "code",
       "norm_label": "assigneeavatar()",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L597"
+      "source_location": "L606"
     },
     {
       "id": "src_routes_tasks_boardskeleton",
@@ -3567,7 +3567,7 @@
       "file_type": "code",
       "norm_label": "boardskeleton()",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L650"
+      "source_location": "L659"
     },
     {
       "id": "src_routes_tasks_column",
@@ -3603,7 +3603,7 @@
       "file_type": "code",
       "norm_label": "mytaskslist()",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L602"
+      "source_location": "L611"
     },
     {
       "id": "src_routes_tasks_taskcard",
@@ -17394,7 +17394,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L598",
+      "source_location": "L607",
       "weight": 1.0
     },
     {
@@ -17430,7 +17430,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L634",
+      "source_location": "L643",
       "weight": 1.0
     },
     {
@@ -17442,7 +17442,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L636",
+      "source_location": "L645",
       "weight": 1.0
     },
     {
@@ -17454,7 +17454,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L563",
+      "source_location": "L572",
       "weight": 1.0
     },
     {
@@ -17466,7 +17466,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L571",
+      "source_location": "L580",
       "weight": 1.0
     },
     {
@@ -17478,7 +17478,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L582",
+      "source_location": "L591",
       "weight": 1.0
     },
     {
@@ -37709,18 +37709,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L597",
-      "weight": 1.0
-    },
-    {
-      "source": "src_routes_tasks",
-      "target": "src_routes_tasks_mytaskslist",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L602",
+      "source_location": "L606",
       "weight": 1.0
     },
     {
@@ -37732,6 +37721,17 @@
       "confidence_score": 1.0,
       "source_file": "src/routes/Tasks.tsx",
       "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "src_routes_tasks",
+      "target": "src_routes_tasks_mytaskslist",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/routes/Tasks.tsx",
+      "source_location": "L611",
       "weight": 1.0
     },
     {
@@ -37753,7 +37753,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L650",
+      "source_location": "L659",
       "weight": 1.0
     },
     {
@@ -39425,5 +39425,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "dcf1f3de93298db71e4b656a6a1c9bc6c712a32b"
+  "built_at_commit": "3195da083dc005a63db751fb1af78b5a7cc09222"
 }
