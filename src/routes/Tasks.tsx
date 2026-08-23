@@ -1,12 +1,15 @@
 /**
  * /tasks — the kanban board and My Tasks — SPEC §1.6.
  *
- * Drag model: cards are draggable; every card and every column body is a drop
- * target. Dropping on a card takes its place (positionBetween that card and
- * the one above it); dropping on a column appends. One card gets one new
- * position per drop — the column is never rewritten (SPEC §1.6). The
- * keyboard/touch path is the card's edit dialog, whose status buttons move a
- * card across columns without dragging.
+ * Drag model: a card's **grip** is draggable; every card and every column body
+ * is a drop target. Dropping on a card takes its place (positionBetween that
+ * card and the one above it); dropping on a column appends. One card gets one
+ * new position per drop — the column is never rewritten (SPEC §1.6).
+ *
+ * Clicking a card opens the read view, not the form (beta round 3): the drag
+ * surface and the click target are different elements now, which is what
+ * stopped the board feeling janky. The keyboard/touch path across columns is
+ * that view's status buttons.
  *
  * No realtime (SPEC §4): the list loads on mount and converges by refetch
  * when a write fails. At 5–30 users, that is the design.
@@ -23,12 +26,13 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
-import { PlusIcon } from 'lucide-react'
+import { GripVerticalIcon, PlusIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { AuthorAvatar } from '@/components/layout/AuthorAvatar'
 import { SourceChip, TaskDialog, type TaskSource } from '@/components/tasks/TaskDialog'
+import { TaskView } from '@/components/tasks/TaskView'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/lib/auth-context'
@@ -56,7 +60,17 @@ import { cn } from '@/lib/utils'
 
 type View = 'board' | 'mine'
 
-type DialogState = { mode: 'create' } | { mode: 'edit'; task: Task } | null
+type DialogState =
+  | { mode: 'create' }
+  /**
+   * What a card click opens now: read first, edit on request. Held by id
+   * rather than by value because the read view shows live status — it has to
+   * re-resolve from `tasks` after a status button writes, not render the
+   * snapshot taken when the card was clicked.
+   */
+  | { mode: 'view'; taskId: string }
+  | { mode: 'edit'; task: Task }
+  | null
 
 export default function Tasks() {
   const { tasks, error, refresh, createTask, updateTask, deleteTask, moveTask } = useTasks()
@@ -76,7 +90,7 @@ export default function Tasks() {
   useEffect(() => {
     if (jumpToTask === null || tasks === null) return
     const task = tasks.find((t) => t.id === jumpToTask)
-    if (task !== undefined) setDialog({ mode: 'edit', task })
+    if (task !== undefined) setDialog({ mode: 'view', taskId: task.id })
     setParams((prev) => {
       const next = new URLSearchParams(prev)
       next.delete('t')
@@ -85,6 +99,9 @@ export default function Tasks() {
   }, [jumpToTask, tasks, setParams])
 
   const grouped = useMemo(() => groupByStatus(tasks ?? []), [tasks])
+  /** Re-resolved every render so the read view's status is never a snapshot. */
+  const viewTask =
+    dialog?.mode === 'view' ? ((tasks ?? []).find((t) => t.id === dialog.taskId) ?? null) : null
   const mine = useMemo(() => myTasks(tasks ?? [], authorId), [tasks, authorId])
   // The LOCAL calendar date. due_date comes from a native date input, which
   // holds the user's local date — comparing it against the UTC day
@@ -268,6 +285,19 @@ export default function Tasks() {
     })
   }
 
+  /**
+   * The read view's status buttons. Same write the edit form makes for a
+   * status change — including the append position, because the task is
+   * arriving in a column it is not currently in.
+   */
+  async function changeStatus(task: Task, status: TaskStatus) {
+    if (task.status === status) return
+    await updateTask(task.id, {
+      ...statusPatch(status, new Date().toISOString()),
+      position: appendPosition(grouped[status]),
+    })
+  }
+
   async function edit(task: Task, fields: TaskFields) {
     // The append position is only written when the status actually changed
     // (patchFromFields) — the destination column never contains the task then.
@@ -326,7 +356,7 @@ export default function Tasks() {
                 tasks={grouped[status]}
                 today={today}
                 sourceFor={sourceFor}
-                onOpen={(task) => setDialog({ mode: 'edit', task })}
+                onOpen={(task) => setDialog({ mode: 'view', taskId: task.id })}
               />
             ))}
           </div>
@@ -341,9 +371,28 @@ export default function Tasks() {
           tasks={mine}
           today={today}
           sourceFor={sourceFor}
-          onOpen={(task) => setDialog({ mode: 'edit', task })}
+          onOpen={(task) => setDialog({ mode: 'view', taskId: task.id })}
         />
       )}
+
+      <TaskView
+        open={viewTask !== null}
+        task={viewTask}
+        source={viewTask ? sourceFor(viewTask) : null}
+        today={today}
+        canEdit={
+          viewTask !== null &&
+          (viewTask.created_by === null || viewTask.created_by === authorId)
+        }
+        onStatus={(status) => (viewTask ? changeStatus(viewTask, status) : Promise.resolve())}
+        onEdit={() => viewTask && setDialog({ mode: 'edit', task: viewTask })}
+        onDelete={async () => {
+          if (!viewTask) return
+          await deleteTask(viewTask.id)
+          setDialog(null)
+        }}
+        onClose={() => setDialog(null)}
+      />
 
       <TaskDialog
         open={dialog?.mode === 'create'}
@@ -446,14 +495,32 @@ function DraggableCard({
         drag.setNodeRef(el)
         drop.setNodeRef(el)
       }}
-      // Listeners only — not `drag.attributes`. Those would make this wrapper
-      // a second tab stop with role="button" and screen-reader instructions
-      // promising a space-bar drag that no KeyboardSensor answers. The inner
-      // card is the one focusable, and the edit dialog is the keyboard path
-      // across columns.
-      {...drag.listeners}
-      className={cn(drag.isDragging && 'opacity-40', drop.isOver && 'ring-ring/50 ring-2 rounded-lg')}
+      className={cn(
+        'relative',
+        drag.isDragging && 'opacity-40',
+        drop.isOver && 'ring-ring/50 rounded-lg ring-2',
+      )}
     >
+      {/*
+        The drag listeners live on this grip, not on the card (beta round 3).
+        With the whole card as the drag surface, every click was a
+        would-be-drag that had not travelled 6px yet, and a drop landing on
+        another card could still fire that card's click — which is what made
+        the board feel, in Ethan's words, janky and sloppy. Now the card is
+        only a click target and the grip is only a drag handle.
+
+        Not `drag.attributes`: those add role="button" and a screen-reader
+        promise of a space-bar drag that no KeyboardSensor answers. Moving a
+        task by keyboard is the read view's status buttons.
+      */}
+      <span
+        {...drag.listeners}
+        aria-hidden
+        title="Drag to move"
+        className="text-muted-foreground/50 hover:text-muted-foreground absolute top-2 right-1.5 cursor-grab px-1 opacity-0 transition-opacity group-hover/card:opacity-100 active:cursor-grabbing"
+      >
+        <GripVerticalIcon className="size-4" />
+      </span>
       <TaskCard task={task} today={today} source={source} onOpen={onOpen} />
     </div>
   )
@@ -484,7 +551,7 @@ function TaskCard({
         }
       }}
       className={cn(
-        'bg-card text-card-foreground w-full rounded-lg border p-3 text-left text-sm shadow-sm',
+        'bg-card text-card-foreground group/card w-full rounded-lg border p-3 pr-7 text-left text-sm shadow-sm',
         onOpen &&
           'focus-visible:ring-ring/50 cursor-pointer outline-none focus-visible:ring-[3px]',
         overlay && 'shadow-md',
