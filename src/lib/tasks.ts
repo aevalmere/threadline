@@ -67,30 +67,11 @@ export interface TaskSourcePost {
 }
 
 /**
- * Gap left between consecutive positions so most drops midpoint cleanly.
- * float8 has 52 mantissa bits; halving the same gap needs ~50 consecutive
- * drops into one spot before precision runs out — acceptable at 5–30 users,
- * and a reorder writes a fresh position anyway.
+ * The board's fractional ordering now lives in `ordering.ts` — the sidebar and
+ * the docs tree drag on the same arithmetic (beta round 3). Re-exported here
+ * so every existing `from '@/lib/tasks'` import is unchanged.
  */
-export const POSITION_STEP = 1024
-
-/**
- * Position for a card dropped between `prev` and `next` (either side null at
- * a column edge, both null into an empty column). SPEC §1.6: never rewrite a
- * whole column on drop — one card, one new position.
- */
-export function positionBetween(prev: number | null, next: number | null): number {
-  if (prev === null && next === null) return POSITION_STEP
-  if (prev === null) return (next as number) - POSITION_STEP
-  if (next === null) return prev + POSITION_STEP
-  return (prev + next) / 2
-}
-
-/** Append position for a new card at the bottom of a column. */
-export function appendPosition(column: readonly Pick<Task, 'position'>[]): number {
-  if (column.length === 0) return POSITION_STEP
-  return Math.max(...column.map((t) => t.position)) + POSITION_STEP
-}
+export { POSITION_STEP, appendPosition, positionBetween } from './ordering'
 
 /**
  * Board shape: every status key always present (an empty column is a rendered
