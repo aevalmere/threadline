@@ -1,3 +1,17 @@
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 
@@ -36,7 +50,9 @@ import {
   type PageMeta,
   type TreeRow,
 } from '@/lib/pages'
+import { byPosition } from '@/lib/ordering'
 import { useCollections, usePages } from '@/lib/useDocs'
+import { useDragClickGuard } from '@/lib/useDragClickGuard'
 import PageView from '@/routes/PageView'
 
 /**
@@ -148,6 +164,80 @@ function CollectionsPane({
   const loading = collections.collections === null || pages.pages === null
   const loadError = collections.error ?? pages.error
 
+  const { markDragged, swallowClick } = useDragClickGuard()
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+
+  /**
+   * One flat sortable list for the whole tree, in render order, with the
+   * entity kind prefixed onto each id. One DndContext rather than a nested
+   * one per collection: the rendered tree *is* one flat `<ul>` (flattenTree
+   * hands back depth-first rows with a depth number, not nested lists), so a
+   * context per sibling group would mean nesting DndContexts inside each
+   * other's DOM and reasoning about which one captures a drop.
+   *
+   * The drop handler is what enforces the sibling rule instead: a collection
+   * only moves among collections sharing its parent, a page only among pages
+   * in the same collection. Anything else is ignored rather than guessed at —
+   * re-filing a page into another collection is `movePage`, a menu action,
+   * not a drag (SPEC §1.7).
+   */
+  const sortableIds = useMemo(() => {
+    const ids: string[] = []
+    for (const row of tree) {
+      // A row inside a collapsed ancestor renders nothing, so it must not be
+      // in the sortable list either — dnd-kit would measure a node that is
+      // not there.
+      if (ancestorCollapsed(row, tree, collapsed)) continue
+      ids.push(`col:${row.collection.id}`)
+      if (!collapsed.has(row.collection.id)) {
+        for (const p of pagesByCollection.get(row.collection.id) ?? []) ids.push(`page:${p.id}`)
+      }
+    }
+    for (const p of pagesByCollection.get(null) ?? []) ids.push(`page:${p.id}`)
+    return ids
+  }, [tree, collapsed, pagesByCollection])
+
+  function onDragEnd(e: DragEndEvent) {
+    markDragged()
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+
+    const [activeKind, activeId] = String(active.id).split(':')
+    const [overKind, overId] = String(over.id).split(':')
+    // A page dropped on a collection header (or the reverse) is not a move
+    // anyone asked for.
+    if (activeKind !== overKind) return
+
+    if (activeKind === 'col') {
+      const all = collections.collections ?? []
+      const moved = all.find((c) => c.id === activeId)
+      const target = all.find((c) => c.id === overId)
+      if (!moved || !target || moved.parent_id !== target.parent_id) return
+      const siblings = all.filter((c) => c.parent_id === moved.parent_id).sort(byPosition)
+      void run(() =>
+        collections.moveCollection(
+          moved.parent_id,
+          siblings.findIndex((c) => c.id === moved.id),
+          siblings.findIndex((c) => c.id === target.id),
+        ),
+      )
+      return
+    }
+
+    const all = pages.pages ?? []
+    const moved = all.find((p) => p.id === activeId)
+    const target = all.find((p) => p.id === overId)
+    if (!moved || !target || moved.collection_id !== target.collection_id) return
+    const siblings = all.filter((p) => p.collection_id === moved.collection_id).sort(byPosition)
+    void run(() =>
+      pages.reorderPage(
+        moved.collection_id,
+        siblings.findIndex((p) => p.id === moved.id),
+        siblings.findIndex((p) => p.id === target.id),
+      ),
+    )
+  }
+
   async function run(action: () => Promise<unknown>) {
     setActionError(null)
     try {
@@ -206,6 +296,13 @@ function CollectionsPane({
           No pages yet. Create one, or make a collection first.
         </p>
       ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={onDragEnd}
+          onDragCancel={markDragged}
+        >
+        <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
         <ul className="space-y-0.5">
           {tree.map((row) => (
             <CollectionNode
@@ -230,10 +327,16 @@ function CollectionsPane({
               }
               onRename={() => setRenaming(row.collection)}
               onDelete={() => void run(() => collections.deleteCollection(row.collection.id))}
+              swallowClick={swallowClick}
             />
           ))}
-          <UnfiledPages pages={pagesByCollection.get(null) ?? []} />
+          <UnfiledPages
+            pages={pagesByCollection.get(null) ?? []}
+            swallowClick={swallowClick}
+          />
         </ul>
+        </SortableContext>
+        </DndContext>
       )}
 
       <Dialog open={creating} onOpenChange={(open) => !open && setCreating(false)}>
@@ -295,6 +398,7 @@ function CollectionNode({
   onNewPage,
   onRename,
   onDelete,
+  swallowClick,
 }: {
   row: TreeRow
   pages: PageMeta[]
@@ -302,10 +406,15 @@ function CollectionNode({
   hiddenByAncestor: boolean
   onToggle: () => void
   onNewPage: () => void
-  onRename: () => void
   onDelete: () => void
+  onRename: () => void
+  swallowClick: (e: { preventDefault: () => void; stopPropagation: () => void }) => boolean
 }) {
   const [confirming, setConfirming] = useState(false)
+  // Before the early return: hooks cannot be conditional.
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({
+    id: `col:${row.collection.id}`,
+  })
   if (hiddenByAncestor) return null
   const Chevron = collapsed ? ChevronRightIcon : ChevronDownIcon
 
@@ -314,10 +423,19 @@ function CollectionNode({
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <li
+        ref={setNodeRef}
         // Opacity reveal, not display — the action buttons stay tabbable
         // (DECISIONS #24's keyboard rule).
-        className="group flex items-center gap-1 rounded px-1 py-1"
-        style={{ paddingLeft: `${row.depth * 12 + 4}px` }}
+        className={`group flex items-center gap-1 rounded px-1 py-1 ${isDragging ? 'opacity-40' : ''}`}
+        style={{
+          paddingLeft: `${row.depth * 12 + 4}px`,
+          transform: CSS.Transform.toString(transform),
+          transition,
+        }}
+        {...listeners}
+        // Capture phase: stopping here keeps the click off the chevron and
+        // the row's action buttons after a drag lands on them.
+        onClickCapture={(e) => swallowClick(e)}
       >
         <button
           type="button"
@@ -375,13 +493,24 @@ function CollectionNode({
       </ContextMenu>
       {!collapsed &&
         pages.map((p) => (
-          <PageRow key={p.id} page={p} indent={row.depth * 12 + 24} />
+          <PageRow
+            key={p.id}
+            page={p}
+            indent={row.depth * 12 + 24}
+            swallowClick={swallowClick}
+          />
         ))}
     </>
   )
 }
 
-function UnfiledPages({ pages }: { pages: PageMeta[] }) {
+function UnfiledPages({
+  pages,
+  swallowClick,
+}: {
+  pages: PageMeta[]
+  swallowClick: (e: { preventDefault: () => void; stopPropagation: () => void }) => boolean
+}) {
   if (pages.length === 0) return null
   return (
     <>
@@ -389,23 +518,40 @@ function UnfiledPages({ pages }: { pages: PageMeta[] }) {
         Unfiled
       </li>
       {pages.map((p) => (
-        <PageRow key={p.id} page={p} indent={4} />
+        <PageRow key={p.id} page={p} indent={4} swallowClick={swallowClick} />
       ))}
     </>
   )
 }
 
-function PageRow({ page, indent }: { page: PageMeta; indent: number }) {
+function PageRow({
+  page,
+  indent,
+  swallowClick,
+}: {
+  page: PageMeta
+  indent: number
+  swallowClick: (e: { preventDefault: () => void; stopPropagation: () => void }) => boolean
+}) {
   const location = useLocation()
   const navigate = useNavigate()
   const active = location.pathname === `/docs/${page.id}`
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({
+    id: `page:${page.id}`,
+  })
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <li>
+        <li
+          ref={setNodeRef}
+          className={isDragging ? 'opacity-40' : undefined}
+          style={{ transform: CSS.Transform.toString(transform), transition }}
+          {...listeners}
+        >
           <Link
             to={`/docs/${page.id}`}
             aria-current={active ? 'page' : undefined}
+            onClick={(e) => swallowClick(e)}
             className={`${active ? 'bg-accent' : 'hover:bg-accent/40'} flex items-center gap-1.5 rounded px-1 py-1`}
             style={{ paddingLeft: `${indent}px` }}
           >
