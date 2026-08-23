@@ -8,17 +8,21 @@
  * hooks only await the writes that carry the results.
  */
 
+import { byPosition } from '@/lib/ordering'
+
 /** Explicit column lists — never select('*') (keeps mock and wire payloads honest). */
-export const COLLECTION_COLUMNS = 'id,name,parent_id,created_at'
+export const COLLECTION_COLUMNS = 'id,name,parent_id,position,created_at'
 /** The list view never needs the document itself. */
-export const PAGE_LIST_COLUMNS = 'id,collection_id,title,created_by,updated_at,created_at'
+export const PAGE_LIST_COLUMNS = 'id,collection_id,title,position,created_by,updated_at,created_at'
 export const PAGE_COLUMNS =
-  'id,collection_id,title,body_rich,created_by,updated_at,editing_user_id,editing_heartbeat_at,created_at'
+  'id,collection_id,title,body_rich,position,created_by,updated_at,editing_user_id,editing_heartbeat_at,created_at'
 
 export interface Collection {
   id: string
   name: string
   parent_id: string | null
+  /** Order among siblings sharing this parent — fractional, src/lib/ordering.ts. */
+  position: number
   created_at: string
 }
 
@@ -27,6 +31,8 @@ export interface PageMeta {
   id: string
   collection_id: string | null
   title: string
+  /** Order within its collection — fractional, src/lib/ordering.ts. */
+  position: number
   created_by: string | null
   updated_at: string
   created_at: string
@@ -44,12 +50,25 @@ export function pageInsertPayload(opts: {
   collectionId: string | null
   createdBy: string
   title?: string
-}): { collection_id: string | null; title: string; body_rich: null; created_by: string } {
+  /**
+   * Order within the collection. Optional: the column carries an epoch
+   * default that lands an unpositioned page at the bottom, so a caller that
+   * has not read the collection's last position still inserts successfully.
+   */
+  position?: number
+}): {
+  collection_id: string | null
+  title: string
+  body_rich: null
+  created_by: string
+  position?: number
+} {
   return {
     collection_id: opts.collectionId,
     title: opts.title?.trim() || 'Untitled',
     body_rich: null,
     created_by: opts.createdBy,
+    ...(opts.position === undefined ? {} : { position: opts.position }),
   }
 }
 
@@ -124,7 +143,7 @@ export interface TreeRow {
 }
 
 /**
- * The tree as a flat render list: depth-first, siblings sorted by name.
+ * The tree as a flat render list: depth-first, siblings in dragged order.
  * Defensive on bad data — an unknown parent_id renders at the root instead of
  * vanishing, and a cycle (schema-legal: the FK only checks existence) is
  * broken by the visited set rather than looping forever.
@@ -138,7 +157,10 @@ export function flattenTree(collections: readonly Collection[]): TreeRow[] {
     if (list) list.push(c)
     else byParent.set(key, [c])
   }
-  for (const list of byParent.values()) list.sort((a, b) => a.name.localeCompare(b.name))
+  // Siblings sort by their dragged position, not by name (beta round 3). The
+  // backfill seeded positions in the old alphabetical order, so the first
+  // render after that migration looks exactly like the last render before it.
+  for (const list of byParent.values()) list.sort(byPosition)
 
   const out: TreeRow[] = []
   const visited = new Set<string>()

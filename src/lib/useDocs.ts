@@ -29,6 +29,7 @@ import {
   type Page,
   type PageMeta,
 } from '@/lib/pages'
+import { appendPosition, byPosition, positionForMove } from '@/lib/ordering'
 import { supabase } from '@/lib/supabase'
 
 const BUCKET = 'attachments'
@@ -42,7 +43,7 @@ export function useCollections() {
     const list = await supabase
       .from('collections')
       .select(COLLECTION_COLUMNS)
-      .order('created_at', { ascending: true })
+      .order('position', { ascending: true })
     if (list.error) {
       setError(list.error.message)
       return
@@ -59,9 +60,26 @@ export function useCollections() {
     async (name: string, parentId: string | null): Promise<Collection> => {
       const trimmed = name.trim()
       if (trimmed === '') throw new Error('A collection needs a name.')
+      // Append below its siblings: one max-position read, same shape as the
+      // board and the sidebar. Read from the server, not local state.
+      const siblingQuery = supabase.from('collections').select('position')
+      // `.is(col, null)` and `.eq(col, value)` are different filters in
+      // PostgREST — `eq` with a null never matches, so the root list would
+      // read an empty max and every root collection would be created at the
+      // same position.
+      const top = await (parentId === null
+        ? siblingQuery.is('parent_id', null)
+        : siblingQuery.eq('parent_id', parentId)
+      )
+        .order('position', { ascending: false })
+        .limit(1)
       const ins = await supabase
         .from('collections')
-        .insert({ name: trimmed, parent_id: parentId })
+        .insert({
+          name: trimmed,
+          parent_id: parentId,
+          position: appendPosition((top.data ?? []) as { position: number }[]),
+        })
         .select(COLLECTION_COLUMNS)
         .single()
       if (ins.error || !ins.data) {
@@ -71,6 +89,35 @@ export function useCollections() {
       return ins.data as Collection
     },
     [refresh],
+  )
+
+  /**
+   * Drag-reorder a collection among its siblings. `from`/`to` index the
+   * sibling list in render order, `to` being the destination in the final
+   * array. One row written per drop (SPEC §1.7).
+   */
+  const moveCollection = useCallback(
+    async (parentId: string | null, from: number, to: number) => {
+      const siblings = (collections ?? [])
+        .filter((c) => c.parent_id === parentId)
+        .sort(byPosition)
+      const moved = siblings[from]
+      const position = positionForMove(siblings, from, to)
+      if (!moved || position === null) return
+
+      setCollections((current) =>
+        (current ?? []).map((c) => (c.id === moved.id ? { ...c, position } : c)),
+      )
+      const { error: err } = await supabase
+        .from('collections')
+        .update({ position })
+        .eq('id', moved.id)
+      if (err) {
+        await refresh()
+        throw new Error(err.message)
+      }
+    },
+    [collections, refresh],
   )
 
   const renameCollection = useCallback(
@@ -111,7 +158,15 @@ export function useCollections() {
     [refresh],
   )
 
-  return { collections, error, refresh, createCollection, renameCollection, deleteCollection }
+  return {
+    collections,
+    error,
+    refresh,
+    createCollection,
+    renameCollection,
+    deleteCollection,
+    moveCollection,
+  }
 }
 
 export function usePages() {
@@ -120,10 +175,14 @@ export function usePages() {
   const { authorId } = useAuth()
 
   const refresh = useCallback(async () => {
+    // By position, not by recency: the tree is dragged into order now, and a
+    // list you can drag cannot also rearrange itself when someone edits a
+    // page (SPEC §1.7). The migration seeded positions from the old
+    // updated_at order, so nothing jumped when it landed.
     const list = await supabase
       .from('pages')
       .select(PAGE_LIST_COLUMNS)
-      .order('updated_at', { ascending: false })
+      .order('position', { ascending: true })
     if (list.error) {
       setError(list.error.message)
       return
@@ -139,9 +198,22 @@ export function usePages() {
   const createPage = useCallback(
     async (collectionId: string | null): Promise<PageMeta> => {
       if (!authorId) throw new Error('Not ready yet.')
+      const siblingQuery = supabase.from('pages').select('position')
+      const top = await (collectionId === null
+        ? siblingQuery.is('collection_id', null)
+        : siblingQuery.eq('collection_id', collectionId)
+      )
+        .order('position', { ascending: false })
+        .limit(1)
       const ins = await supabase
         .from('pages')
-        .insert(pageInsertPayload({ collectionId, createdBy: authorId }))
+        .insert(
+          pageInsertPayload({
+            collectionId,
+            createdBy: authorId,
+            position: appendPosition((top.data ?? []) as { position: number }[]),
+          }),
+        )
         .select(PAGE_LIST_COLUMNS)
         .single()
       if (ins.error || !ins.data) {
@@ -151,6 +223,34 @@ export function usePages() {
       return ins.data as PageMeta
     },
     [authorId, refresh],
+  )
+
+  /**
+   * Drag-reorder a page within its collection — distinct from `movePage`,
+   * which re-files it into a *different* collection. One row per drop.
+   */
+  const reorderPage = useCallback(
+    async (collectionId: string | null, from: number, to: number) => {
+      const siblings = (pages ?? [])
+        .filter((p) => p.collection_id === collectionId)
+        .sort(byPosition)
+      const moved = siblings[from]
+      const position = positionForMove(siblings, from, to)
+      if (!moved || position === null) return
+
+      setPages((current) =>
+        (current ?? []).map((p) => (p.id === moved.id ? { ...p, position } : p)),
+      )
+      const { error: err } = await supabase
+        .from('pages')
+        .update({ position })
+        .eq('id', moved.id)
+      if (err) {
+        await refresh()
+        throw new Error(err.message)
+      }
+    },
+    [pages, refresh],
   )
 
   const movePage = useCallback(
@@ -176,7 +276,7 @@ export function usePages() {
     [refresh],
   )
 
-  return { pages, error, refresh, createPage, movePage, deletePage }
+  return { pages, error, refresh, createPage, movePage, reorderPage, deletePage }
 }
 
 /**

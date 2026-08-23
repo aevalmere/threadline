@@ -24,7 +24,7 @@ const PAGE = 'f0000000-0000-4000-8000-000000000006'
 const CHANNEL = 'c0000000-0000-4000-8000-000000000003'
 
 function collection(over: Partial<Collection> & Pick<Collection, 'id' | 'name'>): Collection {
-  return { parent_id: null, created_at: '2026-08-22T00:00:00Z', ...over }
+  return { parent_id: null, position: 1024, created_at: '2026-08-22T00:00:00Z', ...over }
 }
 
 describe('pageInsertPayload', () => {
@@ -126,12 +126,14 @@ describe('editingBanner', () => {
 })
 
 describe('flattenTree', () => {
-  it('walks depth-first with siblings sorted by name', () => {
+  it('walks depth-first with siblings in dragged position order', () => {
+    // Names are deliberately the reverse of the positions: since beta round 3
+    // the tree renders what was dragged, not what sorts alphabetically.
     const rows = flattenTree([
-      collection({ id: 'b', name: 'Beta' }),
-      collection({ id: 'a', name: 'Alpha' }),
-      collection({ id: 'a2', name: 'Nested', parent_id: 'a' }),
-      collection({ id: 'a1', name: 'Deep', parent_id: 'a' }),
+      collection({ id: 'b', name: 'Alpha', position: 2048 }),
+      collection({ id: 'a', name: 'Beta', position: 1024 }),
+      collection({ id: 'a2', name: 'Deep', parent_id: 'a', position: 2048 }),
+      collection({ id: 'a1', name: 'Nested', parent_id: 'a', position: 1024 }),
     ])
     expect(rows.map((r) => [r.collection.id, r.depth])).toEqual([
       ['a', 0],
@@ -139,6 +141,14 @@ describe('flattenTree', () => {
       ['a2', 1],
       ['b', 0],
     ])
+  })
+
+  it('breaks a position tie on id so the tree does not shuffle between renders', () => {
+    const rows = flattenTree([
+      collection({ id: 'z', name: 'Zulu', position: 1024 }),
+      collection({ id: 'm', name: 'Mike', position: 1024 }),
+    ])
+    expect(rows.map((r) => r.collection.id)).toEqual(['m', 'z'])
   })
 
   it('renders an unknown parent_id at the root instead of hiding the row', () => {

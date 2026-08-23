@@ -21,6 +21,8 @@ A channel has a `kind`: `'chat'` or `'forum'`.
 
 `channel_members` tracks who is in a channel and their `last_read_message_id`, which drives unread badges.
 
+**Sidebar order is manual and shared** (beta round 3). Chat and forum are two independently drag-reorderable lists, ordered by `channels.position` within each `kind`; a drop writes one row. There is exactly one order for the workspace, not one per person — per-user ordering would need its own table and this is one trusted team (§1.1). A newly created channel appends to the bottom of its list.
+
 ### 1.3 Messages — one table, three jobs
 
 `messages` is chat messages, thread replies, **and** forum comments. Exactly one of `channel_id` / `post_id` is set, enforced by a CHECK constraint.
@@ -51,6 +53,8 @@ The task then renders a "from #channel" chip that jumps to the exact message. Sa
 ### 1.7 Docs
 
 `collections` form a tree via `parent_id`. `pages` hold BlockNote JSON in `body_rich`, autosaved on a 1s debounce.
+
+**The tree is manually ordered** (beta round 3), on the same shared fractional `position` as the sidebar: collections reorder among their siblings, pages within their collection. Moving a page *between* collections is not a drag — it stays out of scope for v1. One consequence is deliberate: a page no longer rises to the top of its collection when it is edited. A list you can drag cannot also rearrange itself underneath you.
 
 **Soft edit-lock, no CRDT.** A page being edited stamps `editing_user_id` and `editing_heartbeat_at` (heartbeat every ~15s). Another user opening that page within ~45s of the last heartbeat sees a banner naming the editor. It is a warning, not a lock — last write wins. Collaborative co-editing is an explicit non-goal.
 
@@ -128,8 +132,9 @@ Any authenticated teammate can rename any other, because §2.2's blanket policy 
 | `topic` | `text` | |
 | `created_by` | `uuid` | → `profiles(id)` on delete set null |
 | `created_at` | `timestamptz not null default now()` | |
+| `position` | `float8 not null default extract(epoch from clock_timestamp())` | **beta round 3.** Sidebar order within `kind`, fractional (§1.2). The epoch default puts a row created by code that does not set it at the bottom of its list |
 
-Unique `(name, kind)`.
+Unique `(name, kind)`. Index `(kind, position)`.
 
 #### `channel_members` — P0
 | Column | Type | Notes |
@@ -179,9 +184,11 @@ P3 also adds the two deferred FKs: `messages.post_id` → `posts(id)` **on delet
 `post_tags(post_id uuid → posts on delete cascade, tag_id uuid → tags on delete cascade, primary key (post_id, tag_id))` — index on `(tag_id)` for "posts with this tag".
 
 #### `collections` / `pages` — P4
-`collections(id uuid pk, name text not null, parent_id uuid null → collections(id) on delete cascade, created_at timestamptz not null default now())`
+`collections(id uuid pk, name text not null, parent_id uuid null → collections(id) on delete cascade, created_at timestamptz not null default now(), position float8 not null default extract(epoch from clock_timestamp()))`
 
 Deleting a collection cascades its child collections but only **un-files** its pages — their FK is `set null`, so no document is ever destroyed by tree pruning.
+
+`position` (**beta round 3**) orders siblings sharing a `parent_id`; a null parent is the root list. Index `(parent_id, position)`.
 
 | `pages` column | Type | Notes |
 |---|---|---|
@@ -193,6 +200,7 @@ Deleting a collection cascades its child collections but only **un-files** its p
 | `updated_at` | `timestamptz not null default now()` | set by the client on **content saves only** — heartbeats never touch it |
 | `editing_user_id` | `uuid` | → `profiles(id)` on delete set null; soft lock (§1.7) |
 | `editing_heartbeat_at` | `timestamptz` | stale after ~45s |
+| `position` | `float8 not null default extract(epoch from clock_timestamp())` | **beta round 3.** Order within `collection_id` (a null collection is the un-filed list). Index `(collection_id, position)` |
 | `created_at` | `timestamptz not null default now()` | |
 
 #### `tasks` — P2
