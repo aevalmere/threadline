@@ -1,7 +1,7 @@
 # Graph Report - threadline  (2026-08-23)
 
 ## Corpus Check
-- 194 files · ~140,194 words
+- 194 files · ~140,565 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `125fc42e`
+- Built from commit: `d7e6cf95`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -136,16 +136,16 @@
 10. `compilerOptions` - 17 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `Column()` --calls--> `cn()`  [EXTRACTED]
+  src/routes/Tasks.tsx → src/lib/utils.ts
+- `DraggableCard()` --calls--> `cn()`  [EXTRACTED]
+  src/routes/Tasks.tsx → src/lib/utils.ts
 - `AssigneeAvatar()` --calls--> `useProfiles()`  [EXTRACTED]
   src/routes/Tasks.tsx → src/lib/profiles-context.ts
 - `Command()` --calls--> `cn()`  [EXTRACTED]
   src/components/ui/command.tsx → src/lib/utils.ts
 - `DialogOverlay()` --calls--> `cn()`  [EXTRACTED]
   src/components/ui/dialog.tsx → src/lib/utils.ts
-- `Column()` --calls--> `cn()`  [EXTRACTED]
-  src/routes/Tasks.tsx → src/lib/utils.ts
-- `DraggableCard()` --calls--> `cn()`  [EXTRACTED]
-  src/routes/Tasks.tsx → src/lib/utils.ts
 
 ## Import Cycles
 - None detected.
@@ -365,7 +365,7 @@ Cohesion: 0.40
 Nodes (4): Getting started, Stack, Threadline, Where things live
 
 ## Knowledge Gaps
-- **433 isolated node(s):** `CheckableFile`, `FileCheck`, `GroupableMessage`, `MessageGroup`, `JumpCandidate` (+428 more)
+- **433 isolated node(s):** `1.1 Workspace model`, `1.2 Channels`, `1.3 Messages — one table, three jobs`, `1.4 Unread badges`, `1.5 Reconnect and resync` (+428 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **54 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -373,12 +373,12 @@ Nodes (4): Getting started, Stack, Threadline, Where things live
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `useAuth()` connect `useAuth` to `PostView.tsx`, `DocsArea.tsx`, `Tasks.tsx`, `useMessages.ts`, `posts.ts`, `mentions.ts`, `auth-context.ts`, `unread-provider.tsx`?**
-  _High betweenness centrality (0.018) - this node is a cross-community bridge._
+  _High betweenness centrality (0.025) - this node is a cross-community bridge._
 - **Why does `cn()` connect `PostView.tsx` to `useAuth`, `Tasks.tsx`, `posts.ts`, `CommandPalette.tsx`?**
-  _High betweenness centrality (0.016) - this node is a cross-community bridge._
+  _High betweenness centrality (0.023) - this node is a cross-community bridge._
 - **Why does `supabase` connect `auth-context.ts` to `PostView.tsx`, `DocsArea.tsx`, `Tasks.tsx`, `useMessages.ts`, `posts.ts`, `CommandPalette.tsx`, `unread-provider.tsx`, `export.ts`?**
-  _High betweenness centrality (0.008) - this node is a cross-community bridge._
-- **What connects `CheckableFile`, `FileCheck`, `GroupableMessage` to the rest of the system?**
+  _High betweenness centrality (0.012) - this node is a cross-community bridge._
+- **What connects `1.1 Workspace model`, `1.2 Channels`, `1.3 Messages — one table, three jobs` to the rest of the system?**
   _433 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `PostView.tsx` be split into smaller, more focused modules?**
   _Cohesion score 0.050118735158105235 - nodes in this community are weakly interconnected._

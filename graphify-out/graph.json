@@ -2007,7 +2007,7 @@
       "file_type": "code",
       "norm_label": "claimedit()",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L357"
+      "source_location": "L379"
     },
     {
       "id": "src_lib_usedocs_deletepagerecord",
@@ -2019,7 +2019,7 @@
       "file_type": "code",
       "norm_label": "deletepagerecord()",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L437"
+      "source_location": "L459"
     },
     {
       "id": "src_lib_usedocs_releaseedit",
@@ -2031,7 +2031,7 @@
       "file_type": "code",
       "norm_label": "releaseedit()",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L371"
+      "source_location": "L393"
     },
     {
       "id": "src_lib_usedocs_savepagerecord",
@@ -2043,7 +2043,7 @@
       "file_type": "code",
       "norm_label": "savepagerecord()",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L383"
+      "source_location": "L405"
     },
     {
       "id": "src_lib_usedocs_syncpagelinks",
@@ -2055,7 +2055,7 @@
       "file_type": "code",
       "norm_label": "syncpagelinks()",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L405"
+      "source_location": "L427"
     },
     {
       "id": "src_lib_usedocs_usecollections",
@@ -2079,7 +2079,7 @@
       "file_type": "code",
       "norm_label": "usepage()",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L302"
+      "source_location": "L324"
     },
     {
       "id": "src_lib_usedocs_usepages",
@@ -2103,7 +2103,7 @@
       "file_type": "code",
       "norm_label": "ancestorcollapsed()",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L386"
+      "source_location": "L392"
     },
     {
       "id": "src_routes_docsarea_collectionform",
@@ -2115,7 +2115,7 @@
       "file_type": "code",
       "norm_label": "collectionform()",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L611"
+      "source_location": "L624"
     },
     {
       "id": "src_routes_docsarea_collectionform_submit",
@@ -2127,7 +2127,7 @@
       "file_type": "code",
       "norm_label": "submit()",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L632"
+      "source_location": "L645"
     },
     {
       "id": "src_routes_docsarea_collectionnode",
@@ -2139,7 +2139,7 @@
       "file_type": "code",
       "norm_label": "collectionnode()",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L400"
+      "source_location": "L413"
     },
     {
       "id": "src_routes_docsarea_collectionspane",
@@ -2163,7 +2163,7 @@
       "file_type": "code",
       "norm_label": "ondragend()",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L208"
+      "source_location": "L214"
     },
     {
       "id": "src_routes_docsarea_collectionspane_run",
@@ -2175,7 +2175,7 @@
       "file_type": "code",
       "norm_label": "run()",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L249"
+      "source_location": "L255"
     },
     {
       "id": "src_routes_docsarea_docsarea",
@@ -2199,7 +2199,7 @@
       "file_type": "code",
       "norm_label": "iconbutton()",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L589"
+      "source_location": "L602"
     },
     {
       "id": "src_routes_docsarea_pagerow",
@@ -2211,7 +2211,7 @@
       "file_type": "code",
       "norm_label": "pagerow()",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L535"
+      "source_location": "L548"
     },
     {
       "id": "src_routes_docsarea_unfiledpages",
@@ -2223,7 +2223,7 @@
       "file_type": "code",
       "norm_label": "unfiledpages()",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L515"
+      "source_location": "L528"
     },
     {
       "id": "src_routes_pageview_pagesurface",
@@ -3555,7 +3555,7 @@
       "file_type": "code",
       "norm_label": "assigneeavatar()",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L592"
+      "source_location": "L597"
     },
     {
       "id": "src_routes_tasks_boardskeleton",
@@ -3567,7 +3567,7 @@
       "file_type": "code",
       "norm_label": "boardskeleton()",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L645"
+      "source_location": "L650"
     },
     {
       "id": "src_routes_tasks_column",
@@ -3603,7 +3603,7 @@
       "file_type": "code",
       "norm_label": "mytaskslist()",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L597"
+      "source_location": "L602"
     },
     {
       "id": "src_routes_tasks_taskcard",
@@ -3615,7 +3615,7 @@
       "file_type": "code",
       "norm_label": "taskcard()",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L534"
+      "source_location": "L539"
     },
     {
       "id": "src_routes_tasks_tasks",
@@ -15690,7 +15690,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L360",
+      "source_location": "L382",
       "weight": 1.0
     },
     {
@@ -15702,7 +15702,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L374",
+      "source_location": "L396",
       "weight": 1.0
     },
     {
@@ -15714,7 +15714,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L390",
+      "source_location": "L412",
       "weight": 1.0
     },
     {
@@ -15726,7 +15726,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L414",
+      "source_location": "L436",
       "weight": 1.0
     },
     {
@@ -15738,7 +15738,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L415",
+      "source_location": "L437",
       "weight": 1.0
     },
     {
@@ -15750,7 +15750,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L420",
+      "source_location": "L442",
       "weight": 1.0
     },
     {
@@ -15834,7 +15834,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L287",
+      "source_location": "L309",
       "weight": 1.0
     },
     {
@@ -16626,7 +16626,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L198",
+      "source_location": "L204",
       "weight": 1.0
     },
     {
@@ -16638,7 +16638,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L225",
+      "source_location": "L231",
       "weight": 1.0
     },
     {
@@ -17394,7 +17394,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L593",
+      "source_location": "L598",
       "weight": 1.0
     },
     {
@@ -17430,7 +17430,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L629",
+      "source_location": "L634",
       "weight": 1.0
     },
     {
@@ -17442,7 +17442,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L631",
+      "source_location": "L636",
       "weight": 1.0
     },
     {
@@ -17454,7 +17454,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L558",
+      "source_location": "L563",
       "weight": 1.0
     },
     {
@@ -17466,7 +17466,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L566",
+      "source_location": "L571",
       "weight": 1.0
     },
     {
@@ -17478,7 +17478,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L577",
+      "source_location": "L582",
       "weight": 1.0
     },
     {
@@ -17826,7 +17826,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L632",
+      "source_location": "L645",
       "weight": 1.0
     },
     {
@@ -17838,7 +17838,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L249",
+      "source_location": "L255",
       "weight": 1.0
     },
     {
@@ -36873,18 +36873,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L302",
-      "weight": 1.0
-    },
-    {
-      "source": "src_lib_usedocs",
-      "target": "src_lib_usedocs_claimedit",
-      "relation": "contains",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/lib/useDocs.ts",
-      "source_location": "L357",
+      "source_location": "L324",
       "weight": 1.0
     },
     {
@@ -36900,13 +36889,24 @@
     },
     {
       "source": "src_lib_usedocs",
+      "target": "src_lib_usedocs_claimedit",
+      "relation": "contains",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/lib/useDocs.ts",
+      "source_location": "L379",
+      "weight": 1.0
+    },
+    {
+      "source": "src_lib_usedocs",
       "target": "src_lib_usedocs_releaseedit",
       "relation": "contains",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L371",
+      "source_location": "L393",
       "weight": 1.0
     },
     {
@@ -36917,7 +36917,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L383",
+      "source_location": "L405",
       "weight": 1.0
     },
     {
@@ -36928,7 +36928,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L405",
+      "source_location": "L427",
       "weight": 1.0
     },
     {
@@ -36939,7 +36939,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/lib/useDocs.ts",
-      "source_location": "L437",
+      "source_location": "L459",
       "weight": 1.0
     },
     {
@@ -37346,7 +37346,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L386",
+      "source_location": "L392",
       "weight": 1.0
     },
     {
@@ -37357,7 +37357,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L400",
+      "source_location": "L413",
       "weight": 1.0
     },
     {
@@ -37368,7 +37368,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L515",
+      "source_location": "L528",
       "weight": 1.0
     },
     {
@@ -37379,7 +37379,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L535",
+      "source_location": "L548",
       "weight": 1.0
     },
     {
@@ -37390,7 +37390,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L589",
+      "source_location": "L602",
       "weight": 1.0
     },
     {
@@ -37401,7 +37401,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L611",
+      "source_location": "L624",
       "weight": 1.0
     },
     {
@@ -37423,7 +37423,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L208",
+      "source_location": "L214",
       "weight": 1.0
     },
     {
@@ -37698,7 +37698,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L534",
+      "source_location": "L539",
       "weight": 1.0
     },
     {
@@ -37709,7 +37709,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L592",
+      "source_location": "L597",
       "weight": 1.0
     },
     {
@@ -37720,7 +37720,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L597",
+      "source_location": "L602",
       "weight": 1.0
     },
     {
@@ -37753,7 +37753,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "src/routes/Tasks.tsx",
-      "source_location": "L645",
+      "source_location": "L650",
       "weight": 1.0
     },
     {
@@ -39408,7 +39408,7 @@
       "confidence_score": 0.85,
       "context": "argument",
       "source_file": "src/routes/DocsArea.tsx",
-      "source_location": "L224",
+      "source_location": "L230",
       "weight": 1.0
     },
     {
@@ -39425,5 +39425,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "125fc42eaaf29ff08c79282ee0c9334abd6ae78f"
+  "built_at_commit": "d7e6cf95c1add381184ce6cec0e7b916d19ce97f"
 }

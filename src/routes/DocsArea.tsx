@@ -587,9 +587,14 @@ function PageRow({
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={() =>
-            void navigator.clipboard.writeText(
-              new URL(`/docs/${page.id}`, window.location.origin).toString(),
-            )
+            navigator.clipboard
+              .writeText(new URL(`/docs/${page.id}`, window.location.origin).toString())
+              // A denied clipboard or a non-secure context rejects here.
+              // MessageGroup answers that by not flipping its icon to a check;
+              // this menu has already closed and has no surface left to report
+              // into, so the handler exists to keep the rejection from going
+              // unhandled, not to say anything.
+              .catch(() => undefined)
           }
         >
           <Link2Icon /> Copy link
