@@ -1,4 +1,18 @@
 import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import {
   FileTextIcon,
   HashIcon,
   KanbanIcon,
@@ -13,7 +27,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { useChannels } from '@/lib/channels-context'
+import { useDragClickGuard } from '@/lib/useDragClickGuard'
 import { useProfiles } from '@/lib/profiles-context'
+import type { Channel } from '@/lib/supabase'
 import { useUnread } from '@/lib/unread-context'
 
 function navClass({ isActive }: { isActive: boolean }) {
@@ -51,18 +67,14 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               <Skeleton className="h-5 w-20" />
             </div>
           ) : (
-            chat.map((c) => (
-              <NavLink
-                key={c.id}
-                to={`/channels/${c.id}`}
-                className={navClass}
-                onClick={onNavigate}
-              >
-                <HashIcon />
-                <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                <UnreadBadge count={badgeFor(c.id)} />
-              </NavLink>
-            ))
+            <SortableChannelList
+              kind="chat"
+              channels={chat}
+              hrefFor={(c) => `/channels/${c.id}`}
+              icon={<HashIcon />}
+              badgeFor={badgeFor}
+              onNavigate={onNavigate}
+            />
           )}
         </section>
 
@@ -78,17 +90,13 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               <Skeleton className="h-5 w-24" />
             </div>
           ) : (
-            forum.map((c) => (
-              <NavLink
-                key={c.id}
-                to={`/forums/${c.id}`}
-                className={navClass}
-                onClick={onNavigate}
-              >
-                <NewspaperIcon />
-                <span className="min-w-0 flex-1 truncate">{c.name}</span>
-              </NavLink>
-            ))
+            <SortableChannelList
+              kind="forum"
+              channels={forum}
+              hrefFor={(c) => `/forums/${c.id}`}
+              icon={<NewspaperIcon />}
+              onNavigate={onNavigate}
+            />
           )}
         </section>
 
@@ -131,6 +139,121 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </Button>
       </div>
     </div>
+  )
+}
+
+/**
+ * One drag-reorderable list of channels — SPEC §1.2. Chat and forum are two
+ * separate DndContexts so a channel can never be dropped into the other kind's
+ * list, which would be a `kind` change disguised as a reorder.
+ *
+ * A drop writes exactly one row (`moveChannel` → `positionForMove`). The order
+ * is shared by the whole workspace, not per person.
+ *
+ * No `touch-action: none` on the rows: it is what PointerSensor wants on
+ * touch devices, but it would also stop a finger scrolling the sidebar from a
+ * channel row, and on mobile the sidebar is a sheet you scroll far more often
+ * than you reorder. Reordering is a pointer-device affordance here.
+ */
+function SortableChannelList({
+  kind,
+  channels,
+  hrefFor,
+  icon,
+  badgeFor,
+  onNavigate,
+}: {
+  kind: Channel['kind']
+  channels: Channel[]
+  hrefFor: (c: Channel) => string
+  icon: React.ReactNode
+  badgeFor?: (id: string) => string | null
+  onNavigate?: () => void
+}) {
+  const { moveChannel } = useChannels()
+  const { markDragged, swallowClick } = useDragClickGuard()
+  // 6px, matching the board: below that a press is a click, so navigating to a
+  // channel by clicking it still works with the whole row as the drag surface.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+
+  function onDragEnd(e: DragEndEvent) {
+    markDragged()
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const from = channels.findIndex((c) => c.id === active.id)
+    const to = channels.findIndex((c) => c.id === over.id)
+    if (from === -1 || to === -1) return
+    void moveChannel(kind, from, to)
+  }
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={onDragEnd}
+      onDragCancel={markDragged}
+    >
+      <SortableContext
+        items={channels.map((c) => c.id)}
+        strategy={verticalListSortingStrategy}
+      >
+        {channels.map((c) => (
+          <SortableChannelRow
+            key={c.id}
+            channel={c}
+            to={hrefFor(c)}
+            icon={icon}
+            badge={badgeFor?.(c.id) ?? null}
+            onNavigate={onNavigate}
+            swallowClick={swallowClick}
+          />
+        ))}
+      </SortableContext>
+    </DndContext>
+  )
+}
+
+function SortableChannelRow({
+  channel,
+  to,
+  icon,
+  badge,
+  onNavigate,
+  swallowClick,
+}: {
+  channel: Channel
+  to: string
+  icon: React.ReactNode
+  badge: string | null
+  onNavigate?: () => void
+  swallowClick: (e: { preventDefault: () => void; stopPropagation: () => void }) => boolean
+}) {
+  // Listeners only, never `attributes` — those would put role="button" and a
+  // space-bar drag promise on a link, and the link is the keyboard path here.
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({
+    id: channel.id,
+  })
+
+  return (
+    <NavLink
+      ref={setNodeRef}
+      to={to}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={({ isActive }) =>
+        cn(navClass({ isActive }), isDragging && 'opacity-40', 'relative')
+      }
+      onClick={(e) => {
+        // A drop that lands on a different row ends with a pointerup there;
+        // without this the app navigates every time you finish a drag.
+        if (swallowClick(e)) return
+        onNavigate?.()
+      }}
+      {...listeners}
+    >
+      {icon}
+      <span className="min-w-0 flex-1 truncate">{channel.name}</span>
+      <UnreadBadge count={badge} />
+    </NavLink>
   )
 }
 

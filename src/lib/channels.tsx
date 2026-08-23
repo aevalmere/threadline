@@ -6,6 +6,7 @@ import {
   type ChannelsContextValue,
   type CreateChannelInput,
 } from '@/lib/channels-context'
+import { appendPosition, byPosition, positionForMove } from '@/lib/ordering'
 import { supabase, type Channel } from '@/lib/supabase'
 
 /** Postgres unique_violation — the (name, kind) constraint from P0. */
@@ -34,7 +35,7 @@ export function ChannelsProvider({ children }: { children: ReactNode }) {
     const { data, error: err } = await supabase
       .from('channels')
       .select('*')
-      .order('name', { ascending: true })
+      .order('position', { ascending: true })
 
     if (err) {
       setError(err.message)
@@ -42,7 +43,7 @@ export function ChannelsProvider({ children }: { children: ReactNode }) {
       return
     }
     setError(null)
-    setChannels((data ?? []) as Channel[])
+    setChannels(((data ?? []) as Channel[]).sort(byPosition))
   }, [])
 
   useEffect(() => {
@@ -51,6 +52,18 @@ export function ChannelsProvider({ children }: { children: ReactNode }) {
 
   const createChannel = useCallback(
     async ({ name, kind, topic }: CreateChannelInput): Promise<Channel> => {
+      // Append to the bottom of its own kind's list: one max-position read,
+      // shaped so `appendPosition` owns the arithmetic. Read from the server
+      // rather than local state so two people creating at once cannot both
+      // compute the same position from the same stale list.
+      const top = await supabase
+        .from('channels')
+        .select('position')
+        .eq('kind', kind)
+        .order('position', { ascending: false })
+        .limit(1)
+      if (top.error) throw friendly(top.error, name)
+
       const { data, error: err } = await supabase
         .from('channels')
         .insert({
@@ -58,6 +71,7 @@ export function ChannelsProvider({ children }: { children: ReactNode }) {
           kind,
           topic: topic?.trim() || null,
           created_by: authorId,
+          position: appendPosition((top.data ?? []) as { position: number }[]),
         })
         .select('*')
         .single()
@@ -67,9 +81,7 @@ export function ChannelsProvider({ children }: { children: ReactNode }) {
       const created = data as Channel
       // Insert locally so the sidebar updates in the same tick as the dialog
       // closing, then reconcile with the server ordering.
-      setChannels((current) =>
-        [...(current ?? []), created].sort((a, b) => a.name.localeCompare(b.name)),
-      )
+      setChannels((current) => [...(current ?? []), created].sort(byPosition))
       return created
     },
     [authorId],
@@ -84,13 +96,48 @@ export function ChannelsProvider({ children }: { children: ReactNode }) {
         .eq('id', id)
       if (err) throw friendly(err, patch.name)
 
+      // No re-sort: the list is ordered by position now, and a rename must not
+      // move a channel out from under the cursor that just renamed it.
       setChannels((current) =>
-        (current ?? [])
-          .map((c) => (c.id === id ? { ...c, name: patch.name, topic } : c))
-          .sort((a, b) => a.name.localeCompare(b.name)),
+        (current ?? []).map((c) => (c.id === id ? { ...c, name: patch.name, topic } : c)),
       )
     },
     [],
+  )
+
+  /**
+   * Reorder within one kind's list. `from`/`to` are indices into that kind's
+   * visible list; `to` is the destination index in the final array, which is
+   * what dnd-kit reports. One row is written per drop (SPEC §1.4) — never the
+   * whole list.
+   *
+   * Optimistic: the sidebar reorders in the same frame as the drop, and a
+   * failed write refreshes back to the server's truth rather than leaving the
+   * list lying about where things are.
+   */
+  const moveChannel = useCallback(
+    async (kind: Channel['kind'], from: number, to: number) => {
+      const ordered = (channels ?? []).filter((c) => c.kind === kind).sort(byPosition)
+      const moved = ordered[from]
+      const position = positionForMove(ordered, from, to)
+      if (!moved || position === null) return
+
+      setChannels((current) =>
+        (current ?? [])
+          .map((c) => (c.id === moved.id ? { ...c, position } : c))
+          .sort(byPosition),
+      )
+
+      const { error: err } = await supabase
+        .from('channels')
+        .update({ position })
+        .eq('id', moved.id)
+      if (err) {
+        await refresh()
+        throw new Error(err.message)
+      }
+    },
+    [channels, refresh],
   )
 
   const deleteChannel = useCallback(async (id: string) => {
@@ -111,8 +158,9 @@ export function ChannelsProvider({ children }: { children: ReactNode }) {
       createChannel,
       updateChannel,
       deleteChannel,
+      moveChannel,
     }),
-    [channels, error, refresh, createChannel, updateChannel, deleteChannel],
+    [channels, error, refresh, createChannel, updateChannel, deleteChannel, moveChannel],
   )
 
   return <ChannelsContext.Provider value={value}>{children}</ChannelsContext.Provider>

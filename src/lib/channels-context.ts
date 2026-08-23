@@ -21,6 +21,11 @@ export interface ChannelsContextValue {
   /** Name and topic together — both are edited in the same dialog. */
   updateChannel: (id: string, patch: { name: string; topic: string }) => Promise<void>
   deleteChannel: (id: string) => Promise<void>
+  /**
+   * Drag-reorder within one kind's sidebar list. Indices are into that kind's
+   * visible list, `to` being the destination index in the final array.
+   */
+  moveChannel: (kind: Channel['kind'], from: number, to: number) => Promise<void>
 }
 
 export const ChannelsContext = createContext<ChannelsContextValue | null>(null)

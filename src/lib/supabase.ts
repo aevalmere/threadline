@@ -55,4 +55,6 @@ export interface Channel {
   topic: string | null
   created_by: string | null
   created_at: string
+  /** Sidebar order within `kind` — fractional, see src/lib/ordering.ts. */
+  position: number
 }
