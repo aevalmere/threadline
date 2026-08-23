@@ -1564,3 +1564,93 @@ single `graphify update .` set one consistent baseline — code plus the
 heading structure of all 58 docs: **1127 nodes · 2138 edges · 117
 communities**, heuristic hub labels in `.graphify_labels.json` (+`.sig`,
 both committed), dated backup folders ignored. Still zero tokens.
+
+## #31 — 2026-08-23 — Beta round 3: manual ordering, the task read view, and the two the review caught
+
+Ethan's third feedback round. Three complaints, one shape: *the lists are
+in an order nobody chose, and the board feels janky and sloppy.*
+
+**Ordering is fractional, and it is the same arithmetic the board has run
+since P2.** One migration (`20260823001537`) adds `position float8` to
+`channels`, `collections` and `pages`, mirroring `tasks.position`. A drop
+takes the midpoint of its new neighbours and writes **exactly one row** —
+renumbering a list would be N writes per drag against Non-negotiable 8, and
+two clients renumbering at once would fight. `positionForMove` and the
+`byPosition` comparator moved out of the board into `src/lib/ordering.ts`
+first, so all four surfaces share one tested implementation.
+
+Two things the migration is careful about, both caught in its pre-push
+review rather than after:
+
+- **Every column carries an epoch default.** `db push` lands while the
+  deployed bundle is still pre-ordering code, so for the minutes until
+  Cloudflare finishes, the running app — and `scripts/seed.ts`, at twelve
+  call sites including the four-verb anon RLS probe Non-negotiable 2
+  requires — inserts these rows with no `position` at all. A defaultless
+  NOT NULL turns every one of those into 23502. The epoch value is also
+  ~1.7e9 against backfilled values in the thousands, so a row written by
+  code that knows nothing about ordering lands at the bottom of its list,
+  which is where a new row belongs.
+- **The backfill reproduces each list's CURRENT visible order** — channels
+  and collections alphabetically, pages by `updated_at desc` — not creation
+  order. The moment the client starts reading `position` the backfill *is*
+  the visible order; getting it wrong would have rearranged every sidebar
+  and docs tree on deploy, and only a second migration could put it back.
+
+**A click is not a drag.** The whole card being the drag surface meant every
+click was a would-be-drag that had not travelled 6px yet, and a drop could
+fire the click of whatever card it landed on. Now the drag listeners live on
+a grip and the card is only a click target — which opens **`TaskView`**, a
+read view (title, description as text, meta, provenance chip, linked items,
+live status buttons) instead of dropping the reader into a form with every
+field already an input. `useDragClickGuard` swallows the click that follows
+a real drag on the sidebar and docs tree, where the row is still the handle.
+Listeners only, never dnd-kit's `attributes`: those put `role="button"` and
+a space-bar-drag promise on a link that no KeyboardSensor answers.
+
+**What the batch review caught — FAIL, fixed in `777315b`, re-review PASS.**
+Both findings were invisible to `tsc`, `lint` and `vitest`, which is the
+argument for the reviewer existing:
+
+- **The docs tree wrote an inverted position on a second drag.**
+  `pagesByCollection` grouped pages in fetch order and never sorted, while
+  `reorderPage` patches one row's `position` optimistically without
+  re-sorting. So a drop moved nothing on screen until the 15s edit-lock
+  poll — and inside that window `onDragEnd` computed its indices against
+  siblings sorted *by position* while the user was looking at an unsorted
+  list. Pages A B C: drag A to the bottom, see nothing move, drag C onto A,
+  and C is written to the bottom. Collections never had it because
+  `flattenTree` re-sorts; the sidebar never had it because `moveChannel`
+  re-sorts its state. The fix is one `sort(byPosition)` in the memo.
+- **The board's grip could never be seen.** The same commit that made the
+  grip the *only* drag surface put `group/card` on the card — the grip's
+  sibling. Tailwind's group-hover variant compiles to a descendant
+  selector, so the grip sat at `opacity-0` in every state. The marker moved
+  to the wrapper; the grip is additionally solid below `sm`, because on a
+  touch viewport there is no hover to reveal it with.
+
+**The seed grew probes for the schema this batch shipped** — the migration
+arrived with none, against the discipline every prior phase kept (P3
+fifteen, P4 eleven, P5 six). Five, all live: an insert omitting `position`
+lands and defaults to epoch scale; an authenticated client writes one row
+per drop; and each list is spaced rather than collapsed.
+
+That last one was reframed on the reviewer's note, and the reason is worth
+keeping. The first draft asserted every position in a list is **distinct** —
+but the app never promised that. `createChannel`, `createCollection` and
+`createPage` each read `max(position)` and write `max + 1024`, so two
+people creating in the same list in the same moment write the same number,
+and that tie is *handled*, by the `id` tiebreak in `byPosition` that both
+`ordering.test.ts` and `pages.test.ts` pin. A probe that halts a gate over
+a tie the code deliberately absorbs is a false stop. It now fails only on
+the failure that actually has no order — a list where every row shares one
+position, which is what a botched window function would have produced —
+and prints tolerated ties instead of dying on them.
+
+**Deliberately not fixed:** `CollectionNode` calls `useSortable` before its
+`hiddenByAncestor` early return, so rows under a collapsed ancestor
+register sortable ids that are deliberately absent from `sortableIds`.
+Benign — `setNodeRef` is never called for a hidden row, so the droppable
+has no rect and `closestCenter` skips it — and moving a hook across an
+early return is a larger risk than the mismatch. Recorded here so the next
+session does not rediscover it as a bug.

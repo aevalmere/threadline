@@ -36,10 +36,10 @@
     "semantic_hash": "4d2cfe30d1f66eb993139f3ddbeec026"
   },
   "scripts/seed.ts": {
-    "mtime": 1787428181.732237,
-    "seen": 1787430575.507849,
-    "ast_hash": "7551d7a0f45c8c036356d5910878b2f5",
-    "semantic_hash": "7551d7a0f45c8c036356d5910878b2f5"
+    "mtime": 1787504909.307279,
+    "seen": 1787505185.1084461,
+    "ast_hash": "5cf0ecef7d8792b8b8b4fca6b6a5efca",
+    "semantic_hash": ""
   },
   "skills-lock.json": {
     "mtime": 1787051822.4122157,
@@ -126,9 +126,9 @@
     "semantic_hash": "739561e100cc6ac70298753d6da09eb2"
   },
   "src/components/layout/Sidebar.tsx": {
-    "mtime": 1787444634.329143,
-    "seen": 1787444698.7651505,
-    "ast_hash": "15bfd32e19361e13d7f13958ae851ace",
+    "mtime": 1787505280.9129994,
+    "seen": 1787505636.7051659,
+    "ast_hash": "416b63d484ae8b28e059a0c4980e104a",
     "semantic_hash": ""
   },
   "src/components/messages/AttachmentView.tsx": {
@@ -258,9 +258,9 @@
     "semantic_hash": ""
   },
   "src/lib/channels.tsx": {
-    "mtime": 1787444405.7362201,
-    "seen": 1787444698.765226,
-    "ast_hash": "cee820ccea14ac69d2f3ae49862b2eaa",
+    "mtime": 1787505287.2917914,
+    "seen": 1787505636.7100444,
+    "ast_hash": "d63ba075411d0ef6f9eb65260619f264",
     "semantic_hash": ""
   },
   "src/lib/docFiles.ts": {
@@ -474,22 +474,22 @@
     "semantic_hash": "bfb82770084d440a363bdd11ae497e65"
   },
   "src/routes/Channels.tsx": {
-    "mtime": 1787414497.4266622,
-    "seen": 1787430575.5079248,
-    "ast_hash": "e43b05305660ae5606b3d98453bac7af",
-    "semantic_hash": "e43b05305660ae5606b3d98453bac7af"
+    "mtime": 1787445526.551303,
+    "seen": 1787504559.0655403,
+    "ast_hash": "1ae92a3ed3b2a1c3f729a74c325bc915",
+    "semantic_hash": ""
   },
   "src/routes/DocsArea.tsx": {
-    "mtime": 1787445100.6743166,
-    "seen": 1787445232.5000722,
-    "ast_hash": "0472a9f6ee6f424f5619f19caa7e2141",
+    "mtime": 1787505207.13556,
+    "seen": 1787505636.7105606,
+    "ast_hash": "a4d8bf21798f5297b7664fcb08629327",
     "semantic_hash": ""
   },
   "src/routes/ForumView.tsx": {
-    "mtime": 1787414501.2756746,
-    "seen": 1787430575.507927,
-    "ast_hash": "39b388fb72b86277534ca2eaed0c7cd6",
-    "semantic_hash": "39b388fb72b86277534ca2eaed0c7cd6"
+    "mtime": 1787445521.0564528,
+    "seen": 1787504559.0655482,
+    "ast_hash": "5fba7440a2a79a8cd03139709c6bcf47",
+    "semantic_hash": ""
   },
   "src/routes/Forums.tsx": {
     "mtime": 1787414481.055429,
@@ -540,9 +540,9 @@
     "semantic_hash": "e890a94ca0a540cf3e85d2c96147488b"
   },
   "src/routes/Tasks.tsx": {
-    "mtime": 1787445356.332456,
-    "seen": 1787445439.3506107,
-    "ast_hash": "ad2dca9e6acebade4403593cebd4f2aa",
+    "mtime": 1787505241.9101713,
+    "seen": 1787505636.7106583,
+    "ast_hash": "427bad892dbe491204f9ba095b217b59",
     "semantic_hash": ""
   },
   "src/test/attachments.test.ts": {

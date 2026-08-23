@@ -165,18 +165,20 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 > 4. In window A, open a task and set **Assignee** to window B's account → B's bell rings within seconds — "… assigned you a task" — and clicking it opens that task's dialog. (Hidden-tab variant: keep B's tab backgrounded and it arrives as a browser notification.)
 > 5. Mention B in a channel from A → B's bell shows it within seconds (the gate line's second half, re-affirming G1's realtime path).
 >
-> **Still open (async), updated 2026-08-22:** ~~the G3 checklist~~ **clear** · the G4 checklist · this G5 checklist · delete the `guest` auth user · confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages · **TEAM BETA — inviting the team stays blocking on Ethan (DECISIONS #21).**
+> **Still open (async), updated 2026-08-23:** ~~the G3 checklist~~ **clear** · the G4 checklist · this G5 checklist · ~~delete the `guest` auth user~~ **done 2026-08-22 via the admin API, in the same call as the mock removal (DECISIONS #29)** · ~~confirm `VITE_MOCK_BACKEND` is unset in Cloudflare Pages~~ **moot — no source reads that flag any more (DECISIONS #29); a stale value in Pages is inert** · **TEAM BETA — inviting the team stays blocking on Ethan (DECISIONS #21).**
 
 ---
 
 ## P6 — Harden & ship · Aug 28–31 *(orig. Aug 26–31)*
 
-- [ ] Team bug-bash fixes — **priority over everything**
+- [ ] Team bug-bash fixes — **priority over everything** *(three rounds shipped so far — DECISIONS #26, #29, #31. The item stays open for as long as the beta runs; each round is verified as its own batch, not at a gate.)*
 - [x] Data-export button — authenticated JSON dump of all content tables. **Day-one insurance, do not skip** *(shipped early, 2026-08-22 — the rest of P6 is calendar- or beta-gated)*
 - [x] Dependency freeze — Aug 28 *(declared early, 2026-08-22: the app is feature-complete, so nothing buys waiting. From here `package.json` changes only if a priority-one fix demands one, recorded in DECISIONS.)*
 - [ ] Clean-environment redeploy rehearsal — Aug 30 *(repo half rehearsed 2026-08-22: fresh clone → `npm ci` → secret-less mock build → 357 tests, all green — the repository is self-contained. Remaining for the real run: migration replay against a fresh database — watch DECISIONS #28's BOM file — and the Cloudflare env.)*
 - [ ] Timeboxed polish
 - [ ] **SHIP — Aug 31**
+
+> **Beta round 3 batch verify — 2026-08-23, PASS.** Seven commits (`77b80ed`…`777315b`): fractional ordering extracted to `src/lib/ordering.ts`, drag-to-reorder on the sidebar and the docs tree, the `position` migration, the task read view and its grip, whole-row click targets, live probes for the new columns, and the review fixes. `npm run build` exit 0 — entry **789.37 kB / 235.56 kB gzip**, `DocsArea` 1,014.31 kB / 308.31 kB gzip; +61 kB raw over G5 for beta rounds 2–3 together, the 500 kB warning still un-silenced per DECISIONS #20. `npm run lint` exit 0, `npm run test` **334 tests / 18 files** green — down from G5's 351 because `5ece345` deleted the mock's 42-test file, `ordering.test.ts` is the new one. `npm run seed` **91/91 probes** green against live Supabase, including five new ordering probes. The migration was reviewed before `db push` and is applied on the remote under exactly its repo filename. Batch reviewer over the whole diff: **FAIL** with two confirmed findings — the docs tree wrote an inverted position on a second drag, and the board's only drag grip could never become visible — both fixed in `777315b` along with two of the four non-blocking notes; **re-review PASS**. DECISIONS #31 carries the detail, including the one thing deliberately left alone.
 
 **Stretch — only if the bug-bash is quiet by Aug 30.** These two are the *only* items allowed to jump the backlog:
 - [ ] DMs as private 2-person channels *(near-zero new infra on this schema)*

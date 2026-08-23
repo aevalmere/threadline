@@ -1742,9 +1742,18 @@ async function pagesCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
  *    row created by code that knows nothing about ordering belongs.
  *  - An authenticated client can write a position back: one row per drop,
  *    never a renumber (Non-negotiable 8).
- *  - The backfill left every list a **total order**. Two rows sharing a
- *    position is the one failure that would not raise anything — the list
- *    would just swap them at random from render to render.
+ *  - The backfill actually spaced each list out. The failure mode worth
+ *    catching is a botched window function handing every row in a list the
+ *    same number; that list then has no order at all and nothing raises.
+ *
+ * What this deliberately does NOT assert is that positions are globally
+ * distinct, because the app does not promise that: `createChannel`,
+ * `createCollection` and `createPage` each read `max(position)` and write
+ * `max + 1024`, so two people creating in the same list in the same moment
+ * write the same number — and that is *handled*, by the `id` tiebreak in
+ * `byPosition` that `ordering.test.ts` and `pages.test.ts` both pin. A probe
+ * failing the gate over a tie the code deliberately absorbs would be a false
+ * stop. Ties are counted and printed instead.
  */
 async function orderingCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
   const out: ProbeResult[] = []
@@ -1800,7 +1809,7 @@ async function orderingCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
   // parent, pages within their collection.
   const lists: [string, string, () => Promise<{ key: string; pos: number }[]>][] = [
     [
-      'pos uniq chans',
+      'pos spaced ch',
       'channel',
       async () =>
         ((
@@ -1811,7 +1820,7 @@ async function orderingCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
         })),
     ],
     [
-      'pos uniq cols',
+      'pos spaced col',
       'collection',
       async () =>
         ((
@@ -1822,7 +1831,7 @@ async function orderingCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
         })),
     ],
     [
-      'pos uniq pages',
+      'pos spaced pg',
       'page',
       async () =>
         ((
@@ -1836,21 +1845,30 @@ async function orderingCheck(anon: SupabaseClient): Promise<ProbeResult[]> {
 
   for (const [verb, noun, fetch] of lists) {
     const rows = await fetch()
-    const seen = new Map<string, Set<number>>()
-    let collisions = 0
+    const counts = new Map<string, number>()
+    const distinct = new Map<string, Set<number>>()
     for (const r of rows) {
-      const bucket = seen.get(r.key) ?? new Set<number>()
-      if (bucket.has(r.pos)) collisions++
+      counts.set(r.key, (counts.get(r.key) ?? 0) + 1)
+      const bucket = distinct.get(r.key) ?? new Set<number>()
       bucket.add(r.pos)
-      seen.set(r.key, bucket)
+      distinct.set(r.key, bucket)
     }
+    const collapsed = [...counts.entries()].filter(
+      ([key, n]) => n > 1 && (distinct.get(key)?.size ?? 0) === 1,
+    ).length
+    const ties = [...counts.entries()].reduce(
+      (acc, [key, n]) => acc + (n - (distinct.get(key)?.size ?? 0)),
+      0,
+    )
     out.push({
       verb,
-      ok: collisions === 0,
+      ok: collapsed === 0,
       detail:
-        collisions === 0
-          ? `${rows.length} ${noun} rows, ${seen.size} list(s), every position distinct`
-          : `${collisions} duplicate position(s) — that list has no stable order`,
+        collapsed > 0
+          ? `${collapsed} list(s) where every row shares one position — the backfill did not space them`
+          : `${rows.length} ${noun} rows, ${counts.size} list(s), spaced${
+              ties > 0 ? ` (${ties} tie(s), broken on id by byPosition)` : ''
+            }`,
     })
   }
 

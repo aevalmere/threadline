@@ -50,6 +50,8 @@ Status is `todo` / `doing` / `done`. Kanban columns are the statuses; ordering w
 
 The task then renders a "from #channel" chip that jumps to the exact message. Same flow from a post via `source_post_id`. **This is one day of work, not a subsystem.**
 
+**A card opens a read view, and dragging is a separate gesture** (beta round 3, DECISIONS #31). Clicking the card body opens the task as text — title, description, meta, provenance chip, linked items — with status buttons that anyone can press, and Edit and Delete only for its creator, matching the form's existing rule. Dragging is a grip in the card's corner, never the whole card: with the card as the drag surface every click was a would-be-drag, and a drop could fire the click of the card it landed on.
+
 ### 1.7 Docs
 
 `collections` form a tree via `parent_id`. `pages` hold BlockNote JSON in `body_rich`, autosaved on a 1s debounce.
