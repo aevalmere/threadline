@@ -480,9 +480,9 @@
     "semantic_hash": ""
   },
   "src/routes/DocsArea.tsx": {
-    "mtime": 1787508151.1216717,
-    "seen": 1787508604.7384617,
-    "ast_hash": "5b23fc75ef26fb264b9c514c08d2c88a",
+    "mtime": 1787508629.008006,
+    "seen": 1787508949.6137023,
+    "ast_hash": "a39278fd21133d560992996f5b3730a4",
     "semantic_hash": ""
   },
   "src/routes/ForumView.tsx": {

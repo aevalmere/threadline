@@ -555,6 +555,15 @@ function TaskCard({
       tabIndex={onOpen ? 0 : undefined}
       onClick={onOpen}
       onKeyDown={(e) => {
+        // Only when the card itself has focus. The provenance chip inside is
+        // a real link, and keydown bubbles: without this, tabbing to
+        // "from #channel" and pressing Enter would preventDefault the link
+        // and open this card's read view instead of jumping to the source —
+        // which is a G2 acceptance path. The chip stops click propagation
+        // but cannot stop this one, because the card is its ancestor.
+        // A plain click is unaffected: there e.target is whatever text was
+        // clicked, so the same guard would break the card.
+        if (e.target !== e.currentTarget) return
         if (onOpen && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault()
           onOpen()
