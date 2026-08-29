@@ -16,7 +16,7 @@ describe('parsePreference', () => {
   it('accepts the values it should', () => {
     expect(parsePreference('theme', 'dark')).toBe('dark')
     expect(parsePreference('accent', 'violet')).toBe('violet')
-    expect(parsePreference('tasksView', 'list')).toBe('list')
+    expect(parsePreference('tasksView', 'mine')).toBe('mine')
     expect(parsePreference('membersOpen', true)).toBe(true)
     expect(parsePreference('docsCollapsed', ['a', 'b'])).toEqual(['a', 'b'])
   })

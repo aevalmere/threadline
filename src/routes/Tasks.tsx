@@ -38,6 +38,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/lib/auth-context'
 import { useChannels } from '@/lib/channels-context'
 import { useProfiles } from '@/lib/profiles-context'
+import { usePreference } from '@/lib/preferences'
 import { plainFromRich, richFromPlain } from '@/lib/rich'
 import { supabase } from '@/lib/supabase'
 import {
@@ -58,7 +59,8 @@ import {
 import { useTasks } from '@/lib/useTasks'
 import { cn } from '@/lib/utils'
 
-type View = 'board' | 'mine'
+// The view union now lives in `preferences.ts` as TasksView, because the
+// choice is persisted and the store has to validate it.
 
 type DialogState =
   | { mode: 'create' }
@@ -76,7 +78,7 @@ export default function Tasks() {
   const { tasks, error, refresh, createTask, updateTask, deleteTask, moveTask } = useTasks()
   const { authorId } = useAuth()
   const { channels } = useChannels()
-  const [view, setView] = useState<View>('board')
+  const [view, setView] = usePreference('tasksView')
   const [dialog, setDialog] = useState<DialogState>(null)
   const [dragging, setDragging] = useState<Task | null>(null)
 

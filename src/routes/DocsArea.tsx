@@ -27,6 +27,7 @@ import {
   Trash2Icon,
 } from 'lucide-react'
 
+import { Resizer } from '@/components/layout/Resizer'
 import { Button } from '@/components/ui/button'
 import {
   ContextMenu,
@@ -51,6 +52,7 @@ import {
   type TreeRow,
 } from '@/lib/pages'
 import { byPosition } from '@/lib/ordering'
+import { readPreference, writePreference } from '@/lib/preferences'
 import { useCollections, usePages } from '@/lib/useDocs'
 import { useDragClickGuard } from '@/lib/useDragClickGuard'
 import PageView from '@/routes/PageView'
@@ -70,6 +72,11 @@ export default function DocsArea() {
   const location = useLocation()
   const navigate = useNavigate()
   const atIndex = location.pathname === '/docs'
+  const [treeWidth, setTreeWidth] = useState(() => readPreference('docsTreeWidth'))
+  const commitTreeWidth = (width: number) => {
+    setTreeWidth(width)
+    writePreference('docsTreeWidth', width)
+  }
 
   // The tree follows other people's work: pages and collections are
   // deliberately not in the realtime publication (DECISIONS #27), so the
@@ -92,8 +99,13 @@ export default function DocsArea() {
 
   return (
     <div className="flex h-full min-h-0">
+      {/* `md:w-[var(--docs-tree-w)]` rather than an inline width: at /docs on a
+          phone this pane is `w-full` and the editor is hidden, and a plain
+          inline width would override that and leave a 256px column beside
+          nothing. */}
       <aside
-        className={`${atIndex ? 'block w-full md:w-64' : 'hidden md:block md:w-64'} shrink-0 overflow-y-auto border-r`}
+        className={`${atIndex ? 'block w-full md:w-[var(--docs-tree-w)]' : 'hidden md:block md:w-[var(--docs-tree-w)]'} shrink-0 overflow-y-auto border-r`}
+        style={{ '--docs-tree-w': `${treeWidth}px` } as React.CSSProperties}
       >
         <CollectionsPane
           collections={collectionsState}
@@ -101,6 +113,15 @@ export default function DocsArea() {
           onOpenPage={(id) => navigate(`/docs/${id}`)}
         />
       </aside>
+      <Resizer
+        label="Resize the page list"
+        boundKey="docsTreeWidth"
+        width={treeWidth}
+        onChange={setTreeWidth}
+        onCommit={commitTreeWidth}
+        side="left"
+        className="hidden md:block"
+      />
       <main className={`${atIndex ? 'hidden md:block' : 'block'} min-w-0 flex-1 overflow-y-auto`}>
         <Routes>
           <Route
@@ -142,7 +163,11 @@ function CollectionsPane({
   pages: ReturnType<typeof usePages>
   onOpenPage: (id: string) => void
 }) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  // Seeded from storage, so a tree someone collapsed is still collapsed after
+  // a reload. Stored as an array of ids because a Set is not JSON.
+  const [collapsed, setCollapsed] = useState<Set<string>>(
+    () => new Set(readPreference('docsCollapsed')),
+  )
   const [creating, setCreating] = useState(false)
   const [renaming, setRenaming] = useState<Collection | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -329,6 +354,10 @@ function CollectionsPane({
                   const next = new Set(prev)
                   if (next.has(row.collection.id)) next.delete(row.collection.id)
                   else next.add(row.collection.id)
+                  // Written here rather than in an effect on `collapsed`: the
+                  // toggle is the only thing that changes it, and an effect
+                  // would also fire on the seed and write it straight back.
+                  writePreference('docsCollapsed', [...next])
                   return next
                 })
               }

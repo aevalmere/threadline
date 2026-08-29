@@ -28,7 +28,8 @@ export type Theme = 'light' | 'dark' | 'system'
 /** What `system` resolves to once the media query is read. */
 export type ResolvedTheme = 'light' | 'dark'
 export type AccentName = 'default' | 'blue' | 'violet' | 'emerald' | 'amber' | 'rose'
-export type TasksView = 'board' | 'list'
+/** Matches the `View` union in `src/routes/Tasks.tsx`. */
+export type TasksView = 'board' | 'mine'
 
 export const THEMES: readonly Theme[] = ['light', 'dark', 'system']
 
@@ -158,7 +159,7 @@ export function parsePreference<K extends keyof Preferences>(
         typeof raw === 'string' && raw in ACCENTS ? raw : fallback
       ) as Preferences[K]
     case 'tasksView':
-      return (raw === 'board' || raw === 'list' ? raw : fallback) as Preferences[K]
+      return (raw === 'board' || raw === 'mine' ? raw : fallback) as Preferences[K]
     case 'membersOpen':
       return (typeof raw === 'boolean' ? raw : fallback) as Preferences[K]
     case 'sidebarWidth':

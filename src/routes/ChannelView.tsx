@@ -188,6 +188,31 @@ export default function ChannelView() {
   }, [messages, pending])
 
   /**
+   * Hold the bottom when the list changes *width*.
+   *
+   * `stickToBottom` is only ever recomputed inside `onScroll`, which is fine
+   * while the box is fixed: content grows, the effect above re-pins, done.
+   * Dragging the sidebar breaks that assumption — the list gets narrower,
+   * messages rewrap taller, and no scroll event fires, so someone pinned to
+   * the newest message drifts up by however much the text reflowed.
+   *
+   * This is the app's only ResizeObserver, and it is deliberately narrow: it
+   * re-asserts an invariant that already exists rather than introducing a new
+   * one, and it skips the same two cases the effect above skips.
+   */
+  useEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    const observer = new ResizeObserver(() => {
+      if (stickToBottom.current && pendingScrollAnchor.current === null) {
+        el.scrollTop = el.scrollHeight
+      }
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  /**
    * `?m=<id>` — where a notification lands you.
    *
    * Two effects, and they have to be separate. This one decides, via
