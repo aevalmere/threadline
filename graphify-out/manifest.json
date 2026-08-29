@@ -84,9 +84,9 @@
     "semantic_hash": "f1ac128bb5691302c77cf57c563bf936"
   },
   "src/components/layout/AppShell.tsx": {
-    "mtime": 1788044186.380307,
-    "seen": 1788044321.9089541,
-    "ast_hash": "5d8124f2e2ed93b1cf075f7735bc1352",
+    "mtime": 1788044863.5144577,
+    "seen": 1788045006.4223332,
+    "ast_hash": "4534826695f94b74675acb31559a2230",
     "semantic_hash": ""
   },
   "src/components/layout/AuthorAvatar.tsx": {
@@ -126,9 +126,9 @@
     "semantic_hash": "739561e100cc6ac70298753d6da09eb2"
   },
   "src/components/layout/Sidebar.tsx": {
-    "mtime": 1787505280.9129994,
-    "seen": 1787505636.7051659,
-    "ast_hash": "416b63d484ae8b28e059a0c4980e104a",
+    "mtime": 1788044839.3700137,
+    "seen": 1788045006.4223597,
+    "ast_hash": "c87faed1dc02b18b1c895c8949a111fb",
     "semantic_hash": ""
   },
   "src/components/messages/AttachmentView.tsx": {
@@ -480,9 +480,9 @@
     "semantic_hash": ""
   },
   "src/routes/DocsArea.tsx": {
-    "mtime": 1788044116.8408213,
-    "seen": 1788044321.9092557,
-    "ast_hash": "ba85535356bab870416ec524dc33304b",
+    "mtime": 1788044847.8745954,
+    "seen": 1788045006.422539,
+    "ast_hash": "25d052273bd799100fc9ef87265fed09",
     "semantic_hash": ""
   },
   "src/routes/ForumView.tsx": {
@@ -1176,9 +1176,9 @@
     "semantic_hash": ""
   },
   "src/lib/preferences.ts": {
-    "mtime": 1788044127.935127,
-    "seen": 1788044321.9091277,
-    "ast_hash": "29e13d57332b99a185c85b9aa733cc0d",
+    "mtime": 1788044812.4172552,
+    "seen": 1788045006.4224546,
+    "ast_hash": "fb708ba0c467dc9eb8179e7c6b3a9c10",
     "semantic_hash": ""
   },
   "src/lib/theme-context.ts": {
@@ -1194,15 +1194,15 @@
     "semantic_hash": ""
   },
   "src/test/preferences.test.ts": {
-    "mtime": 1788044131.782925,
-    "seen": 1788044321.9093509,
-    "ast_hash": "0ac397140119fb3480968464bf371ff4",
+    "mtime": 1788044815.5452087,
+    "seen": 1788045006.422596,
+    "ast_hash": "cf1dca2ba201bdd0d0c464c06c5b959f",
     "semantic_hash": ""
   },
   "src/components/layout/Resizer.tsx": {
-    "mtime": 1788043995.7636104,
-    "seen": 1788044321.9089758,
-    "ast_hash": "76a63bffaa8fed5755bf683ba653c49a",
+    "mtime": 1788044834.7264068,
+    "seen": 1788045006.4223542,
+    "ast_hash": "8b17787dc1872e42add849c86bfca671",
     "semantic_hash": ""
   }
 }
