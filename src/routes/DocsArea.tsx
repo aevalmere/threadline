@@ -257,7 +257,7 @@ function CollectionsPane({
     try {
       await action()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Something went wrong.')
+      setActionError(err instanceof Error ? err.message : 'The change could not be saved.')
     }
   }
 
@@ -655,7 +655,7 @@ function CollectionForm({
       await onSubmit(name, parentId === '' ? null : parentId)
       onDone()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
+      setError(err instanceof Error ? err.message : 'The collection could not be saved.')
       setBusy(false)
     }
   }

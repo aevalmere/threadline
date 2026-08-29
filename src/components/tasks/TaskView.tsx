@@ -102,7 +102,7 @@ function TaskBody({
     try {
       await action()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
+      setError(err instanceof Error ? err.message : 'The task could not be updated.')
     } finally {
       setBusy(false)
     }
