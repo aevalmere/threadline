@@ -10,6 +10,7 @@ import { useCreateBlockNote } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/shadcn'
 
 import { makeUploadFile, resolveFileUrl } from '@/lib/docFiles'
+import { useTheme } from '@/lib/theme-context'
 
 /**
  * The BlockNote surface. Uncontrolled: `initialContent` is read exactly once
@@ -32,6 +33,7 @@ export default function PageEditor({
   onReady: (editor: BlockNoteEditor) => void
   onChange: () => void
 }) {
+  const { resolved } = useTheme()
   const editor = useCreateBlockNote({
     // Never [] — BlockNote throws on an empty array; undefined means one
     // fresh paragraph. A null body_rich is the stored form of "empty".
@@ -47,7 +49,15 @@ export default function PageEditor({
     onReady(editor)
   }, [editor, onReady])
 
-  // theme pinned: the site is light-only, and BlockNote's default follows
-  // the OS — a dark editor inside a light app was the "embed" feel.
-  return <BlockNoteView editor={editor} theme="light" onChange={onChange} />
+  // Driven, not pinned. This was hardcoded to "light" because the app was
+  // light-only and BlockNote's default follows the OS — a dark editor inside a
+  // light app was the "embed" feel DECISIONS #29 chased out. Now that the app
+  // has a theme, the editor takes it.
+  //
+  // It has to be told explicitly: BlockNote's shadcn chrome compiles against
+  // our tokens (the @source line in index.css) and follows `.dark` on its own,
+  // but its core stylesheet keys off a `data-color-scheme` attribute that only
+  // this prop sets. `resolved` rather than `theme`, because "system" is not an
+  // answer it accepts.
+  return <BlockNoteView editor={editor} theme={resolved} onChange={onChange} />
 }

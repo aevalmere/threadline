@@ -9,7 +9,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { extensionOf, formatBytes } from '@/lib/attachments'
 import { useAuth } from '@/lib/auth-context'
 import { exportFilename, exportWorkspace } from '@/lib/export'
+import { ACCENTS, THEMES, type AccentName, type Theme } from '@/lib/preferences'
 import { useProfiles } from '@/lib/profiles-context'
+import { useTheme } from '@/lib/theme-context'
 import { supabase } from '@/lib/supabase'
 import { normalizeDisplayName, normalizeUsername } from '@/lib/username'
 
@@ -254,8 +256,85 @@ export default function Settings() {
         )}
       </form>
 
+      <AppearanceSection />
+
       <ExportSection />
     </div>
+  )
+}
+
+const THEME_LABELS: Record<Theme, string> = {
+  light: 'Light',
+  dark: 'Dark',
+  system: 'System',
+}
+
+/**
+ * Theme and accent. Both apply immediately and persist to localStorage, so
+ * there is no Save button here and no busy state to show — the write is
+ * synchronous and cannot fail in a way the person could act on.
+ */
+function AppearanceSection() {
+  const { theme, setTheme, accent, setAccent, resolved } = useTheme()
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-sm font-medium">Appearance</h2>
+
+      <div className="space-y-1.5">
+        <span id="theme-label" className="text-muted-foreground text-sm">
+          Theme
+        </span>
+        <div role="group" aria-labelledby="theme-label" className="flex gap-2">
+          {THEMES.map((option) => (
+            <Button
+              key={option}
+              type="button"
+              size="sm"
+              variant={theme === option ? 'default' : 'outline'}
+              aria-pressed={theme === option}
+              onClick={() => setTheme(option)}
+            >
+              {THEME_LABELS[option]}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <span id="accent-label" className="text-muted-foreground text-sm">
+          Accent
+        </span>
+        <div role="group" aria-labelledby="accent-label" className="flex flex-wrap gap-2">
+          {(Object.keys(ACCENTS) as AccentName[]).map((name) => {
+            const spec = ACCENTS[name]
+            // The swatch shows the value for the theme currently on screen, so
+            // it is a preview rather than a guess. Default has no stored colour
+            // of its own; it borrows whatever --primary resolves to.
+            const swatch = spec ? (resolved === 'dark' ? spec.dark : spec.light) : undefined
+            return (
+              <button
+                key={name}
+                type="button"
+                // Icon-only control, so the name has to come from the label.
+                aria-label={spec ? spec.label : 'Default'}
+                aria-pressed={accent === name}
+                onClick={() => setAccent(name)}
+                // size-7 keeps the hit area past the 24px minimum even though
+                // the dot inside reads smaller.
+                className={
+                  'focus-visible:ring-ring size-7 rounded-full border transition-[box-shadow,transform] focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none ' +
+                  (accent === name ? 'ring-ring scale-110 ring-2 ring-offset-2' : '')
+                }
+                style={swatch ? { backgroundColor: swatch } : undefined}
+              >
+                {!spec && <span className="bg-primary block size-full rounded-full" />}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </section>
   )
 }
 

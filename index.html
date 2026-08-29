@@ -5,6 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>Threadline</title>
+    <script>
+      // Paint the theme before React exists. Without this a dark-mode person
+      // gets a white flash on every load, because the class that drives all 25
+      // tokens is only applied once ThemeProvider mounts.
+      //
+      // Deliberately only the class, not the accent: a wrong accent for one
+      // frame is invisible, a wrong background is not, and duplicating the
+      // colour table here is how the two copies drift apart.
+      //
+      // The key and the JSON encoding must match src/lib/preferences.ts.
+      try {
+        var stored = localStorage.getItem('threadline:theme')
+        var theme = stored ? JSON.parse(stored) : 'system'
+        var dark =
+          theme === 'dark' ||
+          (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+        if (dark) document.documentElement.classList.add('dark')
+      } catch (e) {
+        // Storage blocked, or a value that is not JSON. Light is the default
+        // and the provider will settle it a moment later either way.
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

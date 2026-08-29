@@ -90,10 +90,10 @@
     "semantic_hash": "f4749168f78adcede8c71cd5faea9bd8"
   },
   "src/components/layout/AuthorAvatar.tsx": {
-    "mtime": 1786362315.3671765,
-    "seen": 1787430575.5078585,
-    "ast_hash": "2918bd0fcdc11f66d2079fec1000b58e",
-    "semantic_hash": "2918bd0fcdc11f66d2079fec1000b58e"
+    "mtime": 1788040861.9678679,
+    "seen": 1788041021.865419,
+    "ast_hash": "f195a437ddba16d0c69dfaf6d3a7f88a",
+    "semantic_hash": ""
   },
   "src/components/layout/CommandPalette.tsx": {
     "mtime": 1787428106.4419706,
@@ -1167,6 +1167,12 @@
     "mtime": 1788032128.2099211,
     "seen": 1788032361.9701316,
     "ast_hash": "57a4e95c53f603c1e04359c7bae62376",
+    "semantic_hash": ""
+  },
+  "src/components/ui/anonymous-avatar.tsx": {
+    "mtime": 1788039801.3953905,
+    "seen": 1788041021.8654826,
+    "ast_hash": "7a57d93f3974de495b82271e09ee7169",
     "semantic_hash": ""
   }
 }
