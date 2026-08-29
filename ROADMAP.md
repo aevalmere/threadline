@@ -2,7 +2,9 @@
 
 **Source of truth for sequencing.** `SPEC.md` owns schema and behavior.
 
-**Ship: August 31, 2026 — non-negotiable.**
+**Ship: date moved 2026-08-29, new date not yet set.**
+
+> **The Aug 31 date was given up on Ethan's explicit call, 2026-08-29.** He asked for theme personalization, resizable panes, QoL and Google sign-in, was told plainly that they do not fit before Aug 31 and that Google sign-in removes the invite-code wall, and answered "yes do all of it, date will move". That is the decision; it is recorded here because every other line in this file was written against a date that no longer holds. **Nothing about the P0–P5 gates changes** — they passed on their own terms. What moves is P6's ship line and everything after it. A new date is Ethan's to set once the P7 scope below lands and the team beta has actually happened.
 
 One phase at a time. **A phase starts as soon as the previous gate's machine side passes** *(rewritten 2026-08-18, DECISIONS #21 — gates no longer wait on the user)*. Sessions take a whole batch — by default the rest of the phase — with bulk verification at batch end. Every gate still ends with a manual production checklist for the user, but it runs asynchronously: what it surfaces comes back as priority-one bugs; it does not hold the next phase. Still blocking: TEAM BETA entry at G2 and the G6 ship checks.
 
@@ -194,6 +196,28 @@ One phase at a time. **A phase starts as soon as the previous gate's machine sid
 > 1. **G4** — the editing banner actually *renders* and names the right person, and drops on navigate-away (~15s) and on a closed tab (~60s); a pasted image renders after a hard refresh and in the second window; clicking a **Linked items** entry navigates; **Copy link** pasted into a doc lands on the right message, flashed; the trash icon is absent for a non-creator.
 > 2. **G5** — a search hit scrolls to and flashes the right message; a task hit opens its dialog on the board; the bell's browser `Notification` fires with the tab hidden.
 > 3. **Round 3, never seen by a human at all** — drag-to-reorder on the sidebar and the docs tree, and the task read view. These shipped after the last checklist Ethan ran.
+
+---
+
+## P7 — Personalization and Google sign-in · from 2026-08-29 *(added when the date moved)*
+
+Asked for by Ethan on 2026-08-29 and planned in one batch, since it touches auth. Display-name and avatar editing were part of the ask and **already shipped in P1** (`/settings`), so they are not items here.
+
+- [x] Anonymous default avatar — a Threadline mark instead of initials (`184924e`)
+- [x] Theme: light, dark, system, plus a per-person accent (`f67c5cd`)
+- [x] Resizable sidebar, member list and docs page list, with a keyboard path (`a4b2e76`)
+- [x] QoL: docs tree collapse, Tasks view and member-panel state now survive a reload (`a4b2e76`)
+- [ ] **Google sign-in** — blocked on Ethan: a Google Cloud OAuth client, the provider enabled in the Supabase dashboard, redirect URLs for both origins, and the team's Google addresses
+  - [ ] Spike: does GoTrue link a Google identity to an existing confirmed-email user while signups stay disabled? Everything else depends on the answer
+  - [ ] `handle_new_user` reads Google's `full_name` (today a Google user would display as their derived handle) — **reviewed before `db push`**
+  - [ ] Google button on `/login`, password sign-in kept as the lockout fallback
+  - [ ] `AuthCallback` reads `error`/`error_description` instead of bouncing silently after 8s
+  - [ ] First-sign-in avatar import into the bucket, so `avatar_url` stays a storage path
+  - [ ] Seed probes for the new invariant; CLAUDE.md, SPEC §5 and a DECISIONS entry in the same commit
+
+> **The wall, stated once so it is not rediscovered.** Supabase's project-level signup switch blocks *all* new-user creation, OAuth included, and that switch is the entire wall — `scripts/seed.ts` asserts it every run, and four documents depend on it. The plan keeps signups **disabled** and pre-creates teammates by their Google address, so Google becomes a nicer key for an account that already exists. Gating the Google button behind a shared password in the browser is **not** a wall and must not be built: the OAuth endpoint is public and the anon key ships in the bundle, which is the same reasoning DECISIONS #14 recorded for the invite code.
+
+> **Batch verify 2026-08-29 — theme, resize and QoL.** `npm run build` exit 0, entry chunk **796.55 kB / 238.01 kB gzip** (789.34 / 235.55 before, so +7.2 kB raw for the whole of it and **no new dependency**; `DocsArea` unchanged at 1,015.08 kB). `npm run lint` exit 0. `npm run test` **347 tests / 19 files** green — 13 new, covering the preference parser, the width clamp, theme resolution and the accent table. `npm run seed` not re-run: nothing in these three commits touches the database, a migration, or a policy. Reviewer run over the accumulated diff recorded below.
 
 **Stretch — only if the bug-bash is quiet by Aug 30.** These two are the *only* items allowed to jump the backlog:
 - [ ] DMs as private 2-person channels *(near-zero new infra on this schema)*

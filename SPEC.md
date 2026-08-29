@@ -76,6 +76,20 @@ The bell shipped in **P1**, not P5 (DECISIONS #16). One arrival produces exactly
 
 One ⌘K box. Calls `search_all(q)` once, groups the results by `entity_type`, and jumps to the entity — except a `person` result, which re-runs the search with that user's `@username` (there is no profile surface to jump to). Postgres FTS, plus a title/username substring fallback inside the same function (§3 v2) — still no external search service.
 
+### 1.11 Appearance and layout preferences
+
+*Added 2026-08-29 — DECISIONS #32.*
+
+**Theme.** Light, dark, or system, chosen in `/settings`. `system` follows `prefers-color-scheme` live. The choice puts a `.dark` class on `<html>`, which is what the token block in `index.css` has always keyed off; `index.html` applies the same class before React mounts so a dark-mode load does not flash white. **Accent** re-tints `--primary`, its foreground and `--ring` from a fixed set of five colours plus the default, each carrying a separate light and dark value because the default primary inverts between themes. Arbitrary colours are deliberately not offered: they need contrast guarding to stop someone making their own text unreadable.
+
+**BlockNote takes the resolved theme explicitly.** Its shadcn chrome compiles against our tokens and follows `.dark` on its own, but its core stylesheet keys off a `data-color-scheme` attribute that only the `theme` prop sets.
+
+**Resizable panes.** The sidebar, the member list and the docs page list drag to resize, each clamped to its own min/max. The divider is also a keyboard control: arrows nudge, shift moves faster, Home and End take the ends of the range. Only at `md` and up — below that the sidebar and member list are sheets and the docs tree takes the full width.
+
+**Where preferences live.** `localStorage`, not Postgres. Everything the app persists server-side is workspace-shared on purpose (the `position` columns order the sidebar for everyone); these are one person's choices on one machine. The accepted cost is that they do not follow you to a second device. Stored values are validated on read and fall back to the default, because they outlive the code that wrote them. Persisted: theme, accent, the three pane widths, the docs tree collapse set, the Tasks board/mine toggle, and whether the member list is open.
+
+**Default avatar.** Someone with no uploaded photo gets the Threadline anonymous mark rather than their initials (2026-08-29). Everyone without a photo therefore renders the same face; the mark is one unbroken stroke from shoulder through the head loop and back, so the head is not detached.
+
 ---
 
 ## 2. Schema v1

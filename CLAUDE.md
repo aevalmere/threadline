@@ -17,7 +17,7 @@ A team's discussion-to-action hub, where every thread keeps its through-line fro
 
 **The core flow is discussion → task → doc without losing context. Every phase serves that flow.** "Create task from message" is the feature that justifies the whole app.
 
-**Ship date: August 31, 2026 — non-negotiable.**
+**Ship date: was August 31, 2026. Moved 2026-08-29 on Ethan's explicit call; a new date is not yet set** — see the note at the top of `ROADMAP.md` and DECISIONS #32. He was told the P7 scope did not fit and chose the scope. Treat the date as moved, not as gone: the priority order below is unchanged, and a new ask still gets weighed against shipping rather than waved through because the deadline slipped once.
 
 Optimize every decision for: **shipping on time > low maintenance > $0/mo hosting > everything else.** When two options are close, pick the boring one with more training-data precedent.
 

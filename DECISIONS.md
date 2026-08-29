@@ -1714,3 +1714,102 @@ registry mismatch above, and — found here but **out of range** —
 `MyTasksList` wraps `SourceChip` in a real `<button>`, which is invalid
 interactive nesting. It predates this batch and the round-3 diff does not
 touch it; it belongs to a hardening pass, not to this sweep.
+
+---
+
+## #32 — 2026-08-29 — Theme, resizable panes, per-person preferences
+
+Ethan asked for theme personalization, resizable panes, QoL, and Google
+sign-in, and accepted that the Aug 31 date moves to pay for them. This entry
+covers the first three; Google sign-in is its own batch and its own entry,
+still unstarted because it is blocked on a Google Cloud OAuth client only
+Ethan can create.
+
+**The theme was already in the repo, switched off.** `src/index.css` has
+carried a complete `.dark` block — all 25 tokens — plus
+`@custom-variant dark (&:is(.dark *))` since shadcn scaffolded it, and nothing
+ever put the class on the root element. So this was wiring, not a repaint.
+Two facts made that true and are worth recording, because they are what a
+future theme change depends on: **nothing in `src/` uses a Tailwind colour
+class** (no `text-slate-500`, none of it), and the only literal colours in the
+app are the eight tag dots in `posts.ts`, which `TagChip` renders as a `size-2`
+dot and never as text or a background. The code anticipated this.
+
+**BlockNote had to be told.** `PageEditor` pinned `theme="light"` with a
+comment saying it was pinned *because* the site was light-only — the fix for
+the "embed" feel in #29. Its shadcn chrome follows our tokens through the
+`@source` line in `index.css`, but its core stylesheet keys off a
+`data-color-scheme` attribute that only the prop sets, so the prop now takes
+the resolved theme. `resolved`, not the raw preference: "system" is not an
+answer BlockNote accepts.
+
+**Preferences are in localStorage, and that is a real trade.** Everything this
+app persists goes to Postgres, but all of it is workspace-shared on purpose —
+the `position` columns from round 3 order the sidebar for the whole team at
+once. Preferences are the opposite: one person, one machine, worth nothing to
+anyone else, and costing a migration, an RLS surface and a round trip to store
+server-side. **They do not follow you to a second device.** A
+`profiles.preferences jsonb` column is the upgrade if that ever stings, and it
+is the only thing that would make them portable.
+
+Stored values are parsed and clamped on the way back in, never trusted. They
+outlive the code that wrote them: a value some earlier version stored, or one
+typed into devtools, has to degrade to the default rather than reach a render.
+Every storage access is also wrapped, because Safari in private mode throws on
+`setItem` and a browser set to block site data throws on read.
+
+`src/lib/preferences.ts` keeps the pure half above the storage half, the same
+decision/IO split as `pages.ts` and `tasks.ts`. That is not tidiness: the
+vitest environment is `node` with no DOM, jsdom is a dependency the freeze will
+not buy, and an import that reached for `localStorage` at module scope would
+break all 347 tests.
+
+**The pre-paint script in `index.html` duplicates one thing on purpose.** It
+reads the theme key and applies the class before React exists, because
+otherwise a dark-mode person gets a white flash on every load. It deliberately
+does **not** apply the accent: a wrong accent for one frame is invisible, a
+wrong background is not, and copying the colour table into the HTML is exactly
+how two copies drift apart.
+
+**Resizable panes are hand-rolled, and `react-resizable-panels` was
+rejected.** The panes that resize were already flex siblings — `AppShell` is
+one row of `aside / flex-1 / aside`, and the docs tree and editor are the same
+shape — so nothing needed restructuring. The library would have cost a
+dependency against the Aug 28 freeze (Non-negotiable 3) and a rewrite of the
+shell into `PanelGroup`/`Panel` to buy about sixty lines.
+
+Widths land as a CSS custom property behind the `md:` prefix rather than as an
+inline `width`. Below `md` the sidebar is `hidden` and the docs tree is
+`w-full`, and an inline width would follow them into both — including into the
+Radix sheet that *is* the sidebar on a phone.
+
+**The divider has a keyboard path, and that does not reopen #24 or #31.** WCAG
+2.5.7 wants a non-drag alternative for a drag-only interaction. For the
+dnd-kit lists the answer is settled and deliberate: the grips are `aria-hidden`
+precisely so they do not promise a space-bar drag no `KeyboardSensor` answers,
+and moving a task by keyboard is the read view's status buttons. A divider is
+different — it has an obvious keyboard form, the WAI window-splitter pattern —
+so it got one. Arrows nudge, shift moves faster, Home and End take the ends.
+
+**The one thing that needed a `ResizeObserver`.** `ChannelView` recomputes
+`stickToBottom` only inside `onScroll`, which is sound while the box is a fixed
+width: content grows, the follow-the-bottom effect re-pins. Dragging the
+sidebar breaks that assumption — the list narrows, messages rewrap taller, and
+**no scroll event fires**, so someone pinned to the newest message silently
+drifts up by however much the text reflowed. This is the app's first
+`ResizeObserver` and it is scoped to re-asserting an invariant that already
+existed, skipping the same two cases the existing effect skips.
+
+**The default avatar changed, and it costs something.** A person with no photo
+now gets a drawn anonymous mark instead of their initials, at Ethan's request.
+Initials distinguished two photo-less teammates in the message list and the
+member list; the mark does not, so they all render the same face. Discord
+solves this with a per-user tint and we could, but it was not asked for.
+`src/lib/initials.ts` is left in place, unreferenced, because reversing this is
+one line.
+
+**Not done, deliberately.** The kanban columns do not resize: that row is an
+`overflow-x-auto` scroller of fixed-width columns, so a divider fights the
+scroller rather than splitting a finite width. The two `bg-black/50` modal
+scrims were reviewed and left alone, since a black scrim dims a dark background
+correctly.
