@@ -12,7 +12,7 @@ import { NotificationBell } from '@/components/layout/NotificationBell'
 import { Resizer } from '@/components/layout/Resizer'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { ChannelsProvider } from '@/lib/channels'
-import { readPreference, usePreference, writePreference } from '@/lib/preferences'
+import { readPreference, writePreference } from '@/lib/preferences'
 import { ProfilesProvider } from '@/lib/profiles'
 import { UnreadProvider } from '@/lib/unread-provider'
 import { useIsDesktop } from '@/lib/useIsDesktop'
@@ -24,12 +24,23 @@ export default function AppShell() {
   // One flag drives both member surfaces: the docked panel at md and up, and
   // the sheet below it. Two would let the panel be open on a phone rotated to
   // landscape and shut again on the way back.
-  const [membersOpen, setMembersOpen] = usePreference('membersOpen')
+  const isDesktop = useIsDesktop()
+  // Restored only on a wide viewport. The same flag drives the docked panel
+  // and the mobile sheet, and restoring it on a phone would open a
+  // full-screen overlay on load that nobody asked for. Closing it on a phone
+  // still writes, because that is a choice; opening it there is not a
+  // preference worth carrying to the desktop.
+  const [membersOpen, setMembersOpenState] = useState(() =>
+    isDesktop ? readPreference('membersOpen') : false,
+  )
+  const setMembersOpen = (open: boolean) => {
+    setMembersOpenState(open)
+    writePreference('membersOpen', open)
+  }
   // Live width during a drag is component state; storage is written once at
   // the end of the drag rather than on every pointer frame.
   const [sidebarWidth, setSidebarWidth] = useState(() => readPreference('sidebarWidth'))
   const [membersWidth, setMembersWidth] = useState(() => readPreference('membersWidth'))
-  const isDesktop = useIsDesktop()
   const openPalette = () => setPaletteOpen(true)
 
   const commitSidebar = (width: number) => {
@@ -133,10 +144,8 @@ export default function AppShell() {
                   onCommit={commitMembers}
                   side="right"
                 />
-                <aside
-                  className="shrink-0 border-l"
-                  style={{ width: `${membersWidth}px` }}
-                >
+                {/* No border-l: the Resizer above is the seam. */}
+                <aside className="shrink-0" style={{ width: `${membersWidth}px` }}>
                   <MemberList />
                 </aside>
               </>

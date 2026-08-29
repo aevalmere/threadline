@@ -155,8 +155,11 @@ export function parsePreference<K extends keyof Preferences>(
     case 'theme':
       return (THEMES.includes(raw as Theme) ? raw : fallback) as Preferences[K]
     case 'accent':
+      // `hasOwn`, not `in`: `in` walks the prototype chain, so a stored
+      // '"toString"' would pass the guard and then write the string
+      // "undefined" into three CSS variables.
       return (
-        typeof raw === 'string' && raw in ACCENTS ? raw : fallback
+        typeof raw === 'string' && Object.hasOwn(ACCENTS, raw) ? raw : fallback
       ) as Preferences[K]
     case 'tasksView':
       return (raw === 'board' || raw === 'mine' ? raw : fallback) as Preferences[K]

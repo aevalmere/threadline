@@ -104,7 +104,7 @@ export default function DocsArea() {
           inline width would override that and leave a 256px column beside
           nothing. */}
       <aside
-        className={`${atIndex ? 'block w-full md:w-[var(--docs-tree-w)]' : 'hidden md:block md:w-[var(--docs-tree-w)]'} shrink-0 overflow-y-auto border-r`}
+        className={`${atIndex ? 'block w-full md:w-[var(--docs-tree-w)]' : 'hidden md:block md:w-[var(--docs-tree-w)]'} shrink-0 overflow-y-auto`}
         style={{ '--docs-tree-w': `${treeWidth}px` } as React.CSSProperties}
       >
         <CollectionsPane

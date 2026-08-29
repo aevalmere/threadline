@@ -25,6 +25,11 @@ describe('parsePreference', () => {
     expect(parsePreference('theme', 'purple')).toBe(PREFERENCE_DEFAULTS.theme)
     expect(parsePreference('theme', null)).toBe(PREFERENCE_DEFAULTS.theme)
     expect(parsePreference('accent', 'chartreuse')).toBe(PREFERENCE_DEFAULTS.accent)
+    // Object.prototype members are not accents. With `in` instead of
+    // `hasOwn` these pass the guard and reach accentVars as a truthy lookup.
+    expect(parsePreference('accent', 'toString')).toBe(PREFERENCE_DEFAULTS.accent)
+    expect(parsePreference('accent', 'constructor')).toBe(PREFERENCE_DEFAULTS.accent)
+    expect(parsePreference('accent', '__proto__')).toBe(PREFERENCE_DEFAULTS.accent)
     expect(parsePreference('tasksView', 42)).toBe(PREFERENCE_DEFAULTS.tasksView)
     expect(parsePreference('membersOpen', 'yes')).toBe(PREFERENCE_DEFAULTS.membersOpen)
   })

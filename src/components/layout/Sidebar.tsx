@@ -49,7 +49,9 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { badgeFor } = useUnread()
 
   return (
-    <div className="bg-sidebar text-sidebar-foreground border-sidebar-border flex h-full flex-col border-r">
+    // No border-r: the Resizer beside it draws the seam on desktop, and in the
+    // mobile sheet SheetContent already carries its own.
+    <div className="bg-sidebar text-sidebar-foreground border-sidebar-border flex h-full flex-col">
       <div className="px-4 py-4">
         <span className="text-base font-semibold tracking-tight">Threadline</span>
       </div>

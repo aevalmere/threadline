@@ -121,15 +121,24 @@ export function Resizer({
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
+      // Defensive: if a pointerup is ever missed, capture loss still ends the
+      // drag, so a later hover cannot resize without a press.
+      onLostPointerCapture={endDrag}
       onKeyDown={onKeyDown}
       className={cn(
         // The divider reads as 1px but grabs across roughly 11, via the
         // pseudo-element below: a 24px-wide visible seam would look like a
         // gutter, and a 1px-wide grab target cannot be hit.
         'relative w-px shrink-0 cursor-col-resize touch-none',
-        // Transparent at rest: every pane it divides already draws its own
-        // border, and a second 1px line beside it reads as a double rule.
-        'hover:bg-ring focus-visible:bg-ring bg-transparent transition-colors',
+        // Visible at rest, and it *is* the seam: the panes it divides had
+        // their own border removed so this does not read as a double rule.
+        //
+        // Not transparent-until-hover, which was the first shape of this.
+        // Tailwind compiles `hover:` inside `@media (hover: hover)`, so on a
+        // wide touch device — where `md:` is true and hover is not — the
+        // divider would have had no visible state at all. That is the rule
+        // that made the board's drag grip invisible in DECISIONS #31.
+        'bg-border hover:bg-ring focus-visible:bg-ring transition-colors',
         'focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-none',
         "after:absolute after:inset-y-0 after:-left-[5px] after:-right-[5px] after:content-['']",
         className,

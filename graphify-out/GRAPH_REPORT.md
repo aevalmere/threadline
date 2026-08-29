@@ -1,29 +1,29 @@
 # Graph Report - threadline  (2026-08-29)
 
 ## Corpus Check
-- 200 files · ~146,901 words
+- 200 files · ~148,859 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1180 nodes · 2300 edges · 119 communities (65 shown, 54 thin omitted)
+- 1183 nodes · 2303 edges · 121 communities (67 shown, 54 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 8 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `a4b2e767`
+- Built from commit: `619b6111`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - cn
-- DocsArea.tsx
+- PageView.tsx
 - Tasks.tsx
-- 2.3 Tables
+- 1. Product behavior
 - devDependencies
-- useMessages.ts
+- PostView.tsx
 - posts.ts
 - CommandPalette.tsx
-- mentions.ts
+- Register.tsx
 - compilerOptions
 - compilerOptions
 - seed.ts
@@ -32,7 +32,7 @@
 - components.json
 - Supabase
 - export.ts
-- normalizeChannelName
+- supabase.ts
 - dependencies
 - public.search_all
 - scripts
@@ -47,7 +47,7 @@
 - package.json
 - public.channels
 - public.unread_counts
-- resolveJump
+- unread-provider.tsx
 - public.tasks
 - public.messages
 - public.collections
@@ -69,6 +69,7 @@
 - tailwind-merge
 - 20260810030333_attachments.sql
 - public.profiles
+- NotificationBell.tsx
 - Changelog
 - Writing Guidelines for Postgres References
 - WebForge Explain
@@ -87,6 +88,7 @@
 - gate.md
 - Supabase Postgres Best Practices
 - BACKLOG.md — v1.1 and beyond
+- auth-context.ts
 - Threadline
 - advanced-full-text-search.md
 - advanced-jsonb-indexing.md
@@ -137,57 +139,57 @@
 10. `compilerOptions` - 17 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `Column()` --calls--> `cn()`  [EXTRACTED]
-  src/routes/Tasks.tsx → src/lib/utils.ts
-- `DraggableCard()` --calls--> `cn()`  [EXTRACTED]
-  src/routes/Tasks.tsx → src/lib/utils.ts
 - `AssigneeAvatar()` --calls--> `useProfiles()`  [EXTRACTED]
   src/routes/Tasks.tsx → src/lib/profiles-context.ts
 - `Command()` --calls--> `cn()`  [EXTRACTED]
   src/components/ui/command.tsx → src/lib/utils.ts
-- `ChannelsProvider()` --indirect_call--> `byPosition()`  [INFERRED]
-  src/lib/channels.tsx → src/lib/ordering.ts
+- `ProfilesContextValue` --references--> `Profile`  [EXTRACTED]
+  src/lib/profiles-context.ts → src/lib/supabase.ts
+- `TagChip()` --calls--> `cn()`  [EXTRACTED]
+  src/components/forums/TagChip.tsx → src/lib/utils.ts
+- `MemberList()` --calls--> `useProfiles()`  [EXTRACTED]
+  src/components/layout/MemberList.tsx → src/lib/profiles-context.ts
 
 ## Import Cycles
 - None detected.
 
-## Communities (119 total, 54 thin omitted)
+## Communities (121 total, 54 thin omitted)
 
 ### Community 0 - "cn"
 Cohesion: 0.06
-Nodes (64): App(), PostDialog(), PostFields, TagChip(), AuthorAvatar(), CurrentChannelTitle(), MemberList(), NotificationBell() (+56 more)
+Nodes (50): App(), DocsArea, PostFields, AuthorAvatar(), CurrentChannelTitle(), navClass(), Sidebar(), SortableChannelList() (+42 more)
 
-### Community 1 - "DocsArea.tsx"
-Cohesion: 0.07
-Nodes (54): DocsArea, SortableChannelList(), ContextMenuContent(), ContextMenuItem(), ContextMenuSeparator(), appendPosition(), byPosition(), POSITION_STEP (+46 more)
+### Community 1 - "PageView.tsx"
+Cohesion: 0.09
+Nodes (49): ChannelsProvider(), friendly(), appendPosition(), byPosition(), POSITION_STEP, positionBetween(), Positioned, positionForMove() (+41 more)
 
 ### Community 2 - "Tasks.tsx"
 Cohesion: 0.09
-Nodes (46): SourceChip(), TaskSource, TaskBody(), TaskView(), plainFromRich(), richFromPlain(), RichParagraph, assignmentNoticeRow() (+38 more)
+Nodes (46): LinkedItems(), SourceChip(), TaskDialog(), TaskForm(), TaskSource, TaskBody(), TaskView(), plainFromRich() (+38 more)
 
-### Community 3 - "2.3 Tables"
+### Community 3 - "1. Product behavior"
 Cohesion: 0.06
-Nodes (30): 1.10 Search, 1.1 Workspace model, 1.2 Channels, 1.3 Messages — one table, three jobs, 1.4 Unread badges, 1.5 Reconnect and resync, 1.6 Tasks, 1.7 Docs (+22 more)
+Nodes (31): 1.10 Search, 1.11 Appearance and layout preferences, 1.1 Workspace model, 1.2 Channels, 1.3 Messages — one table, three jobs, 1.4 Unread badges, 1.5 Reconnect and resync, 1.6 Tasks (+23 more)
 
 ### Community 4 - "devDependencies"
 Cohesion: 0.05
 Nodes (39): dotenv, eslint, @eslint/js, eslint-plugin-react-hooks, eslint-plugin-react-refresh, globals, devDependencies, dotenv (+31 more)
 
-### Community 5 - "useMessages.ts"
-Cohesion: 0.10
-Nodes (42): PageEditor(), AttachmentView(), Preview(), attachmentsByOwner(), CheckableFile, extensionOf(), FileCheck, formatBytes() (+34 more)
+### Community 5 - "PostView.tsx"
+Cohesion: 0.05
+Nodes (84): AttachmentView(), Preview(), Composer, ComposerHandle, EditBox(), MessageBody(), MessageGroupRow(), shortTime() (+76 more)
 
 ### Community 6 - "posts.ts"
-Cohesion: 0.15
-Nodes (25): PostForm(), submit(), commentCounts(), filterByTag(), normalizeTagName(), parseTagInput(), Post, POST_COLUMNS (+17 more)
+Cohesion: 0.14
+Nodes (26): PostDialog(), PostForm(), submit(), TagChip(), commentCounts(), filterByTag(), normalizeTagName(), parseTagInput() (+18 more)
 
 ### Community 7 - "CommandPalette.tsx"
 Cohesion: 0.13
 Nodes (22): LinkPicker(), Pickable, CommandPalette(), onQueryChange(), GROUP_ICONS, Command(), CommandDialog(), CommandEmpty() (+14 more)
 
-### Community 8 - "mentions.ts"
-Cohesion: 0.13
-Nodes (26): Composer, applyMention(), canStartMention(), matchMentions(), MentionCandidate, mentionQueryAt(), MentionSegment, parseMentions() (+18 more)
+### Community 8 - "Register.tsx"
+Cohesion: 0.19
+Nodes (15): normalizeDisplayName(), normalizeUsername(), slugifyUsername(), USERNAME_MAX, USERNAME_MIN, UsernameResult, Register(), onEmailChange() (+7 more)
 
 ### Community 9 - "compilerOptions"
 Cohesion: 0.08
@@ -202,12 +204,12 @@ Cohesion: 0.25
 Nodes (22): accountsCheck(), admin, attachmentsCheck(), deniedWithoutSession(), die(), ensureChannel(), ensureCollection(), ensurePage() (+14 more)
 
 ### Community 12 - "useAuth"
-Cohesion: 0.06
-Nodes (43): LinkedItems(), MessageRow(), AuthProvider(), AuthContext, AuthContextValue, RegisterInput, useAuth(), readFunctionError() (+35 more)
+Cohesion: 0.14
+Nodes (12): MemberList(), MessageRow(), useAuth(), hasUnsafeCharacter(), safeNext(), AuthCallback(), Login(), RequireAuth() (+4 more)
 
 ### Community 13 - "AppShell.tsx"
-Cohesion: 0.14
-Nodes (25): AppShell(), Resizer(), AppShellSearchHint(), ACCENT_VARS, AccentName, ACCENTS, accentVars(), clampWidth() (+17 more)
+Cohesion: 0.11
+Nodes (31): PageEditor(), AppShell(), Resizer(), AppShellSearchHint(), makeUploadFile(), resolveFileUrl(), signedCache, ACCENT_VARS (+23 more)
 
 ### Community 14 - "components.json"
 Cohesion: 0.11
@@ -221,9 +223,9 @@ Nodes (14): Fix suggestion, Source, What happened, Skill Feedback, Steps, Core P
 Cohesion: 0.24
 Nodes (10): EXPORT_MAX_PAGES, EXPORT_PAGE_SIZE, EXPORT_TABLES, exportFilename(), exportWorkspace(), fetchAllRows(), FetchPage, WorkspaceExport (+2 more)
 
-### Community 17 - "normalizeChannelName"
-Cohesion: 0.24
-Nodes (10): CHANNEL_NAME_MAX, ChannelNameResult, normalizeChannelName(), submit(), EditForm(), submit(), CreateForumForm(), submit() (+2 more)
+### Community 17 - "supabase.ts"
+Cohesion: 0.27
+Nodes (9): ChannelsContext, ChannelsContextValue, CreateChannelInput, ProfilesContext, ProfilesContextValue, ProfilesProvider(), Channel, supabase (+1 more)
 
 ### Community 18 - "dependencies"
 Cohesion: 0.18
@@ -243,7 +245,7 @@ Nodes (5): admin, asUser, count, delay, stamp
 
 ### Community 23 - "DECISIONS.md"
 Cohesion: 0.05
-Nodes (38): #10 — 2026-08-10 — TEMPORARY: the workspace is open to anonymous users, #11 — 2026-08-10 — Deleting a message destroys its content; supersedes #9's orphan bullet, #12 — 2026-08-10 — An in-memory mock backend for offline development, #13 — 2026-08-10 — Guest access reverted; supersedes #10, #14 — 2026-08-10 — Accounts: invite-code registration, username + password sign-in, #15 — 2026-08-10 — Mentions are plain `@username`, and the bell rows are written client-side, #16 — 2026-08-10 — The bell is pulled forward to P1, and it fires OS notifications, #17 — 2026-08-10 — Jump-to-message: two failures, and the invariant that ends them (+30 more)
+Nodes (39): #10 — 2026-08-10 — TEMPORARY: the workspace is open to anonymous users, #11 — 2026-08-10 — Deleting a message destroys its content; supersedes #9's orphan bullet, #12 — 2026-08-10 — An in-memory mock backend for offline development, #13 — 2026-08-10 — Guest access reverted; supersedes #10, #14 — 2026-08-10 — Accounts: invite-code registration, username + password sign-in, #15 — 2026-08-10 — Mentions are plain `@username`, and the bell rows are written client-side, #16 — 2026-08-10 — The bell is pulled forward to P1, and it fires OS notifications, #17 — 2026-08-10 — Jump-to-message: two failures, and the invariant that ends them (+31 more)
 
 ### Community 24 - "public.posts"
 Cohesion: 0.32
@@ -277,9 +279,9 @@ Nodes (4): public, public.channel_members, public.channels, public.profiles
 Cohesion: 0.40
 Nodes (4): public.channel_members, public.unread_counts(), public.channels, public.messages
 
-### Community 33 - "resolveJump"
-Cohesion: 0.32
-Nodes (6): JumpCandidate, JumpDecision, resolveJump(), base(), REPLY, ROOT
+### Community 33 - "unread-provider.tsx"
+Cohesion: 0.35
+Nodes (8): UnreadContext, UnreadContextValue, nextLastReadMessageId(), CountRow, UnreadProvider(), reconcileUnread(), unreadBadge(), UnreadMessage
 
 ### Community 34 - "public.tasks"
 Cohesion: 0.40
@@ -292,6 +294,10 @@ Nodes (3): public.messages, public.channels, public.profiles
 ### Community 36 - "public.collections"
 Cohesion: 0.83
 Nodes (3): public.collections, public.pages, public.profiles
+
+### Community 63 - "NotificationBell.tsx"
+Cohesion: 0.23
+Nodes (5): NotificationBell(), relativeTime(), Notification, NotificationTarget, useNotifications()
 
 ### Community 64 - "Changelog"
 Cohesion: 0.12
@@ -346,8 +352,8 @@ Cohesion: 0.20
 Nodes (9): 1. Query Performance (query), 2. Connection Management (conn), 3. Security & RLS (security), 4. Schema Design (schema), 5. Concurrency & Locking (lock), 6. Data Access Patterns (data), 7. Monitoring & Diagnostics (monitor), 8. Advanced Features (advanced) (+1 more)
 
 ### Community 77 - "ROADMAP.md — Threadline"
-Cohesion: 0.20
-Nodes (9): Never-break test paths, P0 — Foundation · Aug 9 *(orig. Aug 5–6)*, P1 — Chat · Aug 10–17 *(orig. Aug 7–13)*, P2 — Tasks · Aug 18–20 *(orig. Aug 14–16)*, P3 — Forums · Aug 19–21 *(orig. Aug 17–19)*, P4 — Docs · Aug 22–25 *(orig. Aug 20–23)*, P5 — Search & notifications · Aug 26–27 *(orig. Aug 24–25)*, P6 — Harden & ship · Aug 28–31 *(orig. Aug 26–31)* (+1 more)
+Cohesion: 0.18
+Nodes (10): Never-break test paths, P0 — Foundation · Aug 9 *(orig. Aug 5–6)*, P1 — Chat · Aug 10–17 *(orig. Aug 7–13)*, P2 — Tasks · Aug 18–20 *(orig. Aug 14–16)*, P3 — Forums · Aug 19–21 *(orig. Aug 17–19)*, P4 — Docs · Aug 22–25 *(orig. Aug 20–23)*, P5 — Search & notifications · Aug 26–27 *(orig. Aug 24–25)*, P6 — Harden & ship · Aug 28–31 *(orig. Aug 26–31)* (+2 more)
 
 ### Community 78 - "Checklist"
 Cohesion: 0.22
@@ -365,29 +371,33 @@ Nodes (5): How to Use, References, Rule Categories by Priority, Supabase Postgre
 Cohesion: 0.33
 Nodes (5): BACKLOG.md — v1.1 and beyond, Explicit v1 non-goals, Ideas parked during the build, Ideas parked during the build, Promoted to v1 stretch
 
+### Community 82 - "auth-context.ts"
+Cohesion: 0.43
+Nodes (6): AuthProvider(), AuthContext, AuthContextValue, RegisterInput, readFunctionError(), Profile
+
 ### Community 83 - "Threadline"
 Cohesion: 0.40
 Nodes (4): Getting started, Stack, Threadline, Where things live
 
 ## Knowledge Gaps
-- **435 isolated node(s):** `TasksView`, `Preferences`, `DialogState`, `PostFields`, `ChannelNameResult` (+430 more)
+- **438 isolated node(s):** `What Threadline is`, `Non-goals — hard NO for v1`, `Locked stack — never swap, never "improve"`, `Non-negotiables`, `Installed skills and MCP — and where they contradict this file` (+433 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **54 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `useAuth()` connect `useAuth` to `cn`, `DocsArea.tsx`, `Tasks.tsx`, `useMessages.ts`, `posts.ts`, `mentions.ts`?**
-  _High betweenness centrality (0.022) - this node is a cross-community bridge._
-- **Why does `cn()` connect `cn` to `DocsArea.tsx`, `Tasks.tsx`, `useMessages.ts`, `CommandPalette.tsx`, `mentions.ts`, `AppShell.tsx`?**
-  _High betweenness centrality (0.020) - this node is a cross-community bridge._
-- **Why does `useProfiles()` connect `cn` to `DocsArea.tsx`, `Tasks.tsx`, `useMessages.ts`, `posts.ts`, `mentions.ts`?**
-  _High betweenness centrality (0.009) - this node is a cross-community bridge._
-- **What connects `TasksView`, `Preferences`, `DialogState` to the rest of the system?**
-  _435 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Why does `useAuth()` connect `useAuth` to `cn`, `PageView.tsx`, `unread-provider.tsx`, `Tasks.tsx`, `PostView.tsx`, `posts.ts`, `Register.tsx`, `supabase.ts`, `auth-context.ts`, `NotificationBell.tsx`?**
+  _High betweenness centrality (0.037) - this node is a cross-community bridge._
+- **Why does `cn()` connect `cn` to `Tasks.tsx`, `PostView.tsx`, `posts.ts`, `CommandPalette.tsx`, `AppShell.tsx`, `NotificationBell.tsx`?**
+  _High betweenness centrality (0.035) - this node is a cross-community bridge._
+- **Why does `useProfiles()` connect `PostView.tsx` to `cn`, `PageView.tsx`, `Tasks.tsx`, `posts.ts`, `Register.tsx`, `useAuth`, `NotificationBell.tsx`?**
+  _High betweenness centrality (0.010) - this node is a cross-community bridge._
+- **What connects `What Threadline is`, `Non-goals — hard NO for v1`, `Locked stack — never swap, never "improve"` to the rest of the system?**
+  _438 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `cn` be split into smaller, more focused modules?**
-  _Cohesion score 0.055205874639391556 - nodes in this community are weakly interconnected._
-- **Should `DocsArea.tsx` be split into smaller, more focused modules?**
-  _Cohesion score 0.06720321931589537 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05987703822507351 - nodes in this community are weakly interconnected._
+- **Should `PageView.tsx` be split into smaller, more focused modules?**
+  _Cohesion score 0.08583959899749373 - nodes in this community are weakly interconnected._
 - **Should `Tasks.tsx` be split into smaller, more focused modules?**
-  _Cohesion score 0.09480519480519481 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08688524590163935 - nodes in this community are weakly interconnected._
