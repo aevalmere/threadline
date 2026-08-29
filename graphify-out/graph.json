@@ -12360,7 +12360,7 @@
       "node_kind": "heading",
       "norm_label": "never-break test paths",
       "source_file": "ROADMAP.md",
-      "source_location": "L189"
+      "source_location": "L193"
     },
     {
       "id": "roadmap_p0_foundation_aug_9_orig_aug_5_6",
@@ -33331,7 +33331,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "ROADMAP.md",
-      "source_location": "L189",
+      "source_location": "L193",
       "weight": 1.0
     },
     {
@@ -39425,5 +39425,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "3195da083dc005a63db751fb1af78b5a7cc09222"
+  "built_at_commit": "dc80882743a78c76943f0b0b79d3503705ba16ef"
 }
